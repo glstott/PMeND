@@ -1,0 +1,172 @@
+Lmod has detected the following error: The following module(s) are unknown:
+"raxml"
+
+Please check the spelling or version number. Also try "module spider ..."
+It is also possible your cache file is out-of-date; it may help to try:
+  $ module --ignore-cache load "raxml"
+
+Also make sure that all modulefiles written in TCL start with the string
+#%Module
+
+
+
+
+WARNING: The number of threads is currently set to 0
+You can specify the number of threads to run via -T numberOfThreads
+NumberOfThreads must be set to an integer value greater than 1
+
+RAxML, will now set the number of threads automatically to 2 !
+
+
+RAxML can't, parse the alignment file as phylip file 
+it will now try to parse it as FASTA file
+
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_291729|A/Afghanistan/0394/2017|Afghanistan|1142454|11/4/17 and EPI_ISL_296494|A/Afghanistan/0394/2017|Afghanistan|1166135|11/4/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_286120|A/Bangladesh/3012/2017|Bangladesh|1107711|6/11/17 and EPI_ISL_275816|A/HongKong/3556/2017|HongKong|1048439|7/15/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_286120|A/Bangladesh/3012/2017|Bangladesh|1107711|6/11/17 and EPI_ISL_275830|A/HongKong/3552/2017|HongKong|1048554|7/16/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_286120|A/Bangladesh/3012/2017|Bangladesh|1107711|6/11/17 and EPI_ISL_283065|A/Singapore/TT0889/2017|Singapore|1087205|6/6/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_290596|A/Shanghai-Chongming/1906/2017|China|1136200|11/1/17 and EPI_ISL_290639|A/Anhui-Tianjiaan/1755/2017|China|1136329|10/9/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_302569|A/Shanghai/47/2017|China|1193941|8/29/17 and EPI_ISL_302575|A/Shanghai/52/2017|China|1193989|9/12/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_293108|A/HongKong/4208/2017|HongKong|1148849|7/22/17 and EPI_ISL_293095|A/HongKong/4108/2017|HongKong|1148823|7/25/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_293108|A/HongKong/4208/2017|HongKong|1148849|7/22/17 and EPI_ISL_378756|A/Busan/747/2017|Malaysia|1551517|9/11/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_293108|A/HongKong/4208/2017|HongKong|1148849|7/22/17 and EPI_ISL_298389|A/Maldives/1068/2017|Maldives|1174671|9/13/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_253110|A/Israel/C-470/2017|Israel|943236|1/8/17 and EPI_ISL_270205|A/Kazakhstan/7075/2017|Kansas|1027062|1/28/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_253110|A/Israel/C-470/2017|Israel|943236|1/8/17 and EPI_ISL_275127|A/Ankara/159/2017|Turkey|1045171|1/17/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_254715|A/KANAGAWA/ZC1614/2017|Japan|952581|2/6/17 and EPI_ISL_253075|A/KANAGAWA/IC1621/2017|Japan|943168|1/24/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_253080|A/KANAGAWA/AC1627/2017|Japan|943178|1/30/17 and EPI_ISL_280796|A/Japan/6113/2017|Japan|1075197|3/4/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_311669|A/Laos/3525/2017|Laos|1240049|9/18/17 and EPI_ISL_314386|A/Laos/4135/2017|Laos|1253553|10/23/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_312769|A/Laos/F3523/2017|Laos|1244868|9/21/17 and EPI_ISL_296485|A/Laos/3436/2017|Laos|1166064|9/14/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_298366|A/Pakistan/232/2017|Pakistan|1174487|10/9/17 and EPI_ISL_291711|A/Pakistan/231/2017|Pakistan|1142314|10/9/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_288098|A/Singapore/TT1547/2017|Singapore|1121290|10/11/17 and EPI_ISL_292439|A/Singapore/TT1683/2017|Singapore|1145503|11/30/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_281414|A/Taiwan/93836/2017|Taiwan|1077181|3/2/17 and EPI_ISL_281413|A/Taiwan/93848/2017|Taiwan|1077180|3/2/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_281439|A/Taiwan/87966/2017|Taiwan|1077206|1/31/17 and EPI_ISL_281438|A/Taiwan/77951/2017|Taiwan|1077205|3/30/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_281428|A/Taiwan/78002/2017|Taiwan|1077195|4/19/17 and EPI_ISL_281431|A/Taiwan/78061/2017|Taiwan|1077198|4/26/17 are exactly identical
+
+
+IMPORTANT WARNING: Sequences EPI_ISL_275603|A/Taiwan/507/2017|Taiwan|1046838|5/30/17 and EPI_ISL_273854|A/Taiwan/354/2017|Taiwan|1040254|5/14/17 are exactly identical
+
+IMPORTANT WARNING
+Found 21 sequences that are exactly identical to other sequences in the alignment.
+Normally they should be excluded from the analysis.
+
+An alignment file with sequence duplicates removed has already
+been printed to file /home/gs69042/CEIRS-Training-Taiwan-2019/CIERStraining-Asia2017HA/RAxML/Asia2017H3N2_subset.mafftout.final.fasta.reduced
+
+
+Using BFGS method to optimize GTR rate parameters, to disable this specify "--no-bfgs" 
+
+
+This is the RAxML Master Pthread
+
+This is RAxML Worker Pthread Number: 1
+
+
+This is RAxML version 8.2.12 released by Alexandros Stamatakis on May 2018.
+
+With greatly appreciated code contributions by:
+Andre Aberer      (HITS)
+Simon Berger      (HITS)
+Alexey Kozlov     (HITS)
+Kassian Kobert    (HITS)
+David Dao         (KIT and HITS)
+Sarah Lutteropp   (KIT and HITS)
+Nick Pattengale   (Sandia)
+Wayne Pfeiffer    (SDSC)
+Akifumi S. Tanabe (NRIFS)
+Charlie Taylor    (UF)
+
+
+Alignment has 446 distinct alignment patterns
+
+Proportion of gaps and completely undetermined characters in this alignment: 0.61%
+
+RAxML rapid hill-climbing mode
+
+Using 1 distinct models/data partitions with joint branch length optimization
+
+
+Executing 3 inferences on the original alignment using 3 distinct randomized MP trees
+
+All free model parameters will be estimated by RAxML
+GAMMA model of rate heterogeneity, ML estimate of alpha-parameter
+
+GAMMA Model parameters will be estimated up to an accuracy of 0.1000000000 Log Likelihood units
+
+Partition: 0
+Alignment Patterns: 446
+Name: No Name Provided
+DataType: DNA
+Substitution Matrix: GTR
+
+
+
+
+RAxML was called as follows:
+
+raxmlHPC -s /home/gs69042/CEIRS-Training-Taiwan-2019/CIERStraining-Asia2017HA/RAxML/Asia2017H3N2_subset.mafftout.final.fasta -n Asia2017H3N2_subset.mafftout.v3.phy -m GTRGAMMA -p 456 -N 3 
+
+
+Partition: 0 with name: No Name Provided
+Base frequencies: 0.342 0.193 0.222 0.242 
+
+Inference[0]: Time 24.267450 GAMMA-based likelihood -7237.286121, best rearrangement setting 10
+Inference[1]: Time 35.036627 GAMMA-based likelihood -7237.306697, best rearrangement setting 20
+Inference[2]: Time 33.370606 GAMMA-based likelihood -7237.303243, best rearrangement setting 20
+
+
+Conducting final model optimizations on all 3 trees under GAMMA-based models ....
+
+Inference[0] final GAMMA-based Likelihood: -7237.286218 tree written to file /home/gs69042/bahllab/ceirs_training/raxml/RAxML_result.Asia2017H3N2_subset.mafftout.v3.phy.RUN.0
+Inference[1] final GAMMA-based Likelihood: -7237.286248 tree written to file /home/gs69042/bahllab/ceirs_training/raxml/RAxML_result.Asia2017H3N2_subset.mafftout.v3.phy.RUN.1
+Inference[2] final GAMMA-based Likelihood: -7237.286222 tree written to file /home/gs69042/bahllab/ceirs_training/raxml/RAxML_result.Asia2017H3N2_subset.mafftout.v3.phy.RUN.2
+
+
+Starting final GAMMA-based thorough Optimization on tree 0 likelihood -7237.286218 .... 
+
+Final GAMMA-based Score of best tree -7237.286226
+
+Program execution info written to /home/gs69042/bahllab/ceirs_training/raxml/RAxML_info.Asia2017H3N2_subset.mafftout.v3.phy
+Best-scoring ML tree written to: /home/gs69042/bahllab/ceirs_training/raxml/RAxML_bestTree.Asia2017H3N2_subset.mafftout.v3.phy
+
+Overall execution time: 103.027672 secs or 0.028619 hours or 0.001192 days
+
