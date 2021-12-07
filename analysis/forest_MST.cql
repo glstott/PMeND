@@ -30,12 +30,13 @@ RETURN dt_range, graphName, fromGraphName, nodeFilter, relationshipFilter,
 
 
 // Generate forest of Minimum Spanning Trees
-MATCH (n:sample {name: 'hCoV-19/USA/TX-CDC-ASC210186970/2021'})
-WITH n
+MATCH (n:sample {collection_date: '2021-08-01'})
+WITH collect(id(n)) AS ids
+LIMIT 100
 UNWIND ['0801-0814', '0801-0828', '0801-0911', '0801-0925', '0801-0930'] AS dt_range
-UNWIND RANGE(0,100,1) AS iteration_number
+UNWIND ids AS iteration_number
 CALL gds.alpha.spanningTree.minimum.write(dt_range, {
-  startNodeId: id(n),
+  startNodeId: iteration_number,
   relationshipWeightProperty: 'distance',
   writeProperty: 'MST_' + iteration_number + '_' + dt_range,
   weightWriteProperty: 'distance_combined'
@@ -47,4 +48,5 @@ RETURN dt_range, iteration_number, createMillis, computeMillis, writeMillis, eff
 UNWIND ['0801-0814', '0801-0828', '0801-0911', '0801-0925', '0801-0930'] AS dt_range
 MATCH (n:sample)-[r]->(n2:sample)
 WHERE type(r) ENDS WITH dt_range
-RETURN n, n2, COUNT(DISTINCT r) AS edge_width, dt_range
+WITH n, n2, COUNT(DISTINCT r) AS edge_width, dt_range
+CREATE (n)-[:joint_MST {source:dt_range, edge_width:edge_width}]->(n2)
