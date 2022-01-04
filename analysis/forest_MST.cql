@@ -1,39 +1,29 @@
-// Create integer field for subgraph generation
+// Create integer field for subgraph generation. 
+//    Subgraphs are only available with numeric values on the relationships extracted.
 MATCH (n:sample)-[r:calculated_distance {source: "GISAID_combined.0801-0814.aligned.nwk"}]->(m:sample) 
 SET r.source_id = 0
 
-// Manually update the range for the child relationship. 
-MATCH (s1:sample), (s2:sample)
-WHERE s1 <> s2
-WITH s1, s2
-MATCH p=(s1)-[:child_of *..]->(l:LICA)<-[:child_of *..]-(s2:sample) 
-WHERE all(r in relationships(p) where r.source = r1.source) 
-WITH s1, s2, p, r1 
-CREATE (s1)-[:calculated_distance {source: r1.source,  
-source_id: CASE WHEN r1.source = "GISAID_combined.0801-0814.aligned.nwk" THEN 0  
-WHEN r1.source = "GISAID_combined.0801-0828.aligned.nwk" THEN 1 
-WHEN r1.source = "GISAID_combined.0801-0911.aligned.nwk" THEN 2 
-WHEN r1.source = "GISAID_combined.0801-0925.aligned.nwk" THEN 3
-WHEN r1.source = "GISAID_combined.0801-0930.aligned.nwk" THEN 4 END,  
-distance:reduce(total=0.0, r IN relationships(p) | toFloat(r.distance)+total)}]->(s2)
-;
+// Calculate distance from each LICA. 
+//    If we measure all distances to LICA, then sum incoming pairs, we will have patristic distances 
+//    without necessitating slower algorithms. Batched to keep it from increasing memory consumption.
+CALL apoc.periodic.iterate('MATCH (l:LICA)<-[:child_of {source: "GISAID_combined.0801-0925.aligned.nwk"}]-(:phylogeny) ' + 
+'OPTIONAL MATCH (l)-[:child_of {source: "GISAID_combined.0801-0925.aligned.nwk"}]->(l2:LICA) ' + 
+'WITH l, l2 ' + 
+'WHERE l2 is null ' + 
+'WITH l ' + 
+'MATCH p=(s1:sample)-[:child_of * {source: "GISAID_combined.0801-0925.aligned.nwk"}]->(l) RETURN p, s1 ' ,
+'FOREACH (t in nodes(p) | CREATE (s1)-[:lica_dist {source: "0801-0925", source_id: 3, distance: ' + 
+'reduce(total=0.0, r IN relationships(p) | r.distance+total)}]->(t))', {batchSize:100});
 
-// Manually update the range for the child relationship. 
-UNWIND ["GISAID_combined.0801-0814.aligned.nwk", "GISAID_combined.0801-0828.aligned.nwk", "GISAID_combined.0801-0911.aligned.nwk","GISAID_combined.0801-0925.aligned.nwk", "GISAID_combined.0801-0930.aligned.nwk"] AS src
-MATCH p=(s1:sample)-[:child_of *7..12 {source: src}]->(:LICA)<-[:child_of *..6 {source: src}]-(s2:sample)
-WHERE id(s1) < id(s2)
-WITH s1, s2, p, src 
-CREATE (s1)-[:calculated_distance {source: src,  
-source_id: CASE WHEN src = "GISAID_combined.0801-0814.aligned.nwk" THEN 0  
-WHEN src = "GISAID_combined.0801-0828.aligned.nwk" THEN 1 
-WHEN src = "GISAID_combined.0801-0911.aligned.nwk" THEN 2 
-WHEN src = "GISAID_combined.0801-0925.aligned.nwk" THEN 3
-WHEN src = "GISAID_combined.0801-0930.aligned.nwk" THEN 4 END,  
-distance:reduce(total=0.0, r IN relationships(p) | toFloat(r.distance)+total)}]->(s2)
-;
+// Sum distances to generate the patristic distance network.
+CALL apoc.periodic.iterate('MATCH (s1:sample)-[r1:lica_dist]->(:LICA)<-[r2:lica_dist]-(s2:sample)' +
+'WHERE id(s1) < id(s2) AND r1.source_id = r2.source_id' +
+'RETURN s1, s2, r1, r2',
+'CREATE (s1)-[:calculated_distance {source: r1.source, source_id: r1.source_id, distance: r1.distance + r2.distance}]->(s2)',
+{batchSize: 100});
 
-// Create graph before paring it down
-CALL gds.graph.drop(["distance_graph",'0801-0814', '0801-0828', '0801-0911', '0801-0925', '0801-0930'])
+// Create complete graph before creating subgraphs for each data subset. 
+CALL gds.graph.drop(["distance_graph",'0801-0814', '0801-0828', '0801-0911', '0801-0925', '0801-0930']);
 CALL gds.graph.create(
   'distance_graph',                    
   {sample: {properties: ['source_id']}},                             
@@ -46,7 +36,7 @@ YIELD
   relationshipCount AS rels
   ;
 
-// Create Subgraph for analysis
+// Create Subgraph for analysis. Only the relevant nodes and relationships for each date range are selected.
 UNWIND ['0801-0814', '0801-0828', '0801-0911', '0801-0925', '0801-0930'] AS dt_range
 CALL gds.beta.graph.create.subgraph(dt_range,
   "distance_graph", 'n.source_id <= ' + CASE WHEN dt_range = '0801-0814' THEN '0'
@@ -65,11 +55,10 @@ RETURN dt_range, graphName, fromGraphName, nodeFilter, relationshipFilter,
     nodeCount, relationshipCount, createMillis
 ;
 
-// Generate forest of Minimum Spanning Trees
-// Generate forest of Minimum Spanning Trees
+// Generate forest of Minimum Spanning Trees, starting with each of the day 0 subjects as an origin. 
+//    This should decrease the bias 
 MATCH (n:sample {collection_date: '2021-08-01'})
 WITH n
-LIMIT 100
 WITH collect(id(n)) AS ids
 UNWIND ['0801-0814', '0801-0828', '0801-0911', '0801-0925', '0801-0930'] AS dt_range
 UNWIND ids AS iteration_number
@@ -87,12 +76,12 @@ RETURN dt_range, iteration_number, createMillis, computeMillis, writeMillis, eff
 UNWIND ['0801-0814', '0801-0828', '0801-0911', '0801-0925', '0801-0930'] AS dt_range
 MATCH (n:sample)-[r]->(n2:sample)
 WHERE type(r) ENDS WITH dt_range
-WITH n, n2, COUNT(DISTINCT r) AS edge_width, AVG(r.distance_combined) AS mean_dist dt_range
+WITH n, n2, COUNT(DISTINCT r) AS edge_width, AVG(r.distance_combined) AS mean_dist, dt_range
 CREATE (n)-[:joint_MST {source:dt_range, edge_width:edge_width, mean_dist: mean_dist}]->(n2)
 ;
 
 
-///////////////////
+/////////////////// Sketch of Clustering script. Needs work. ////////////////////////////
 
 call apoc.custom.asFunction('getLastCluster',
 "MATCH (n) where id(n) = id($n)
