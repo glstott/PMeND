@@ -1,7 +1,0 @@
-CREATE (sex:characteristic:sex {id:"Male"})
-CREATE (sex:characteristic:sex {id:"Female"})
-CREATE (sex:characteristic:sex {id:"Unknown"})
-CREATE (race:characteristic:race {id:line.race})
-CREATE (race:characteristic:race {id:line.race})
-CREATE (race:characteristic:race {id:line.race})
-CREATE (ethnicity:characteristic:ethnicity {id:line.ethnicity})
