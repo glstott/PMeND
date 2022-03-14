@@ -63,21 +63,23 @@ CREATE (s:sample:phylogeny {name: line.GISAID_name, age: toInteger(line.age),
 
 // Load phylogenies from neo_ready.csv, which is generated using tree_to_neo4j.ipynb
 CALL apoc.periodic.iterate( 
-    "LOAD CSV WITH HEADERS FROM 'file:///neo_ready.csv' AS line WITH line WHERE line.type = 'root' OR line.type = 'node' RETURN DISTINCT line.unique_id AS id, line.type AS type", 
+    "LOAD CSV WITH HEADERS FROM 'file:///neo_ready.csv' AS line WITH line WHERE line.type = 'root' OR line.type = 'node' RETURN DISTINCT line.id AS id, line.type AS type", 
     "CREATE (child:LICA:phylogeny {id: id, type: type, source_id: -1})", 
     {batchSize: 1000} );
 
 // Load phylogenies from neo_ready.csv, which is generated using tree_to_neo4j.ipynb
+CALL apoc.periodic.iterate( 
+    "LOAD CSV WITH HEADERS FROM 'file:///neo_ready.csv' AS line WITH line WHERE line.type <> 'root' AND line.type <> 'node' RETURN DISTINCT line.id AS id, line.type AS type", 
+    "CREATE (child:sample:phylogeny {id: id, type: type, source_id: 0})", 
+    {batchSize: 1000} );
+
+// Load phylogenies from neo_ready.csv, which is generated using tree_to_neo4j.ipynb
 CALL apoc.periodic.iterate(" LOAD CSV WITH HEADERS FROM 'file:///neo_ready.csv' AS line " + "WITH line WHERE line.type = 'leaf' " +
-"MATCH (child:sample:phylogeny {name: line.long_id}) " +
-"MATCH (parent:LICA:phylogeny {id: line.parent_unique_id}) " +
+"MATCH (child:sample:phylogeny {id: line.id}) " +
+"MATCH (parent:LICA:phylogeny {id: line.parent}) " +
 "RETURN child, parent, line",
-"CREATE (child)-[:child_of {source: line.source, distance: toFloat(line.distance), "+
-    'source_id: CASE WHEN line.source = "GISAID_combined.0801-0814.aligned.nwk" THEN 0 '+
-                    'WHEN line.source = "GISAID_combined.0801-0828.aligned.nwk" THEN 1 '+
-                    'WHEN line.source = "GISAID_combined.0801-0911.aligned.nwk" THEN 2 '+
-                    'WHEN line.source = "GISAID_combined.0801-0925.aligned.nwk" THEN 3 '+
-                    'WHEN line.source = "GISAID_combined.0801-0930.aligned.nwk" THEN 4 END}]->(parent)',
+"CREATE (child)-[:child_of {source: line.source, distance: toFloat(line.length), "+
+    'source_id: 0}]->(parent)',
                     {batchSize: 1000})
 ;
 
@@ -85,14 +87,34 @@ CALL apoc.periodic.iterate(" LOAD CSV WITH HEADERS FROM 'file:///neo_ready.csv' 
 CALL apoc.periodic.iterate("LOAD CSV WITH HEADERS FROM 'file:///neo_ready.csv' AS line " +
 "WITH line " +
 'WHERE line.type <> "leaf" AND line.type <> "root" ' +
-'MATCH (child:LICA:phylogeny {id: line.unique_id}) ' +
-"MATCH (parent:LICA:phylogeny {id: line.parent_unique_id}) " +
+'MATCH (child:LICA:phylogeny {id: line.id}) ' +
+"MATCH (parent:LICA:phylogeny {id: line.parent}) " +
 "RETURN child, parent, line",
-'CREATE (child)-[:child_of {source: line.source, distance: toFloat(line.distance), ' +
-    'source_id: CASE WHEN line.source = "GISAID_combined.0801-0814.aligned.nwk" THEN 0 ' +
-                   ' WHEN line.source = "GISAID_combined.0801-0828.aligned.nwk" THEN 1 ' +
-                   ' WHEN line.source = "GISAID_combined.0801-0911.aligned.nwk" THEN 2 ' +
-                   ' WHEN line.source = "GISAID_combined.0801-0925.aligned.nwk" THEN 3 ' +
-                   ' WHEN line.source = "GISAID_combined.0801-0930.aligned.nwk" THEN 4 END}]->(parent) ', 
+'CREATE (child)-[:child_of {source: line.source, distance: toFloat(line.length), ' +
+    'source_id: 0}]->(parent) ', 
+                   {batchSize: 1000})
+;
+
+// Load phylogenies from neo_ready.csv, which is generated using tree_to_neo4j.ipynb
+CALL apoc.periodic.iterate("LOAD CSV WITH HEADERS FROM 'file:///neo_ready.csv' AS line " +
+"WITH line " +
+'WHERE line.type <> "leaf" AND line.type <> "root" ' +
+'MATCH (child:LICA:phylogeny {id: line.id}) ' +
+"MATCH (parent:LICA:phylogeny {id: line.parent}) " +
+"RETURN child, parent, line",
+'CREATE (child)-[:child_of {source: line.source, distance: toFloat(line.length), ' +
+    'source_id: 0}]->(parent) ', 
+                   {batchSize: 1000})
+;
+
+// Load phylogenies from neo_ready.csv, which is generated using tree_to_neo4j.ipynb
+CALL apoc.periodic.iterate("LOAD CSV WITH HEADERS FROM 'file:///patristic20220309.csv' AS line " +
+"WITH line, toFloat(line.value) AS patdist WHERE patdist <= 0.5 " +
+"RETURN line, patdist",
+'MATCH (child:sample:phylogeny {id: line.Var1}) ' +
+"MATCH (parent:sample:phylogeny {id: line.Var2}) " +
+"WHERE id(child) < id(parent)"+
+'CREATE (child)-[:calculated_distance {source: "patristic20220309.csv", distance: toFloat(line.value), ' +
+    'source_id: 0}]->(parent) ', 
                    {batchSize: 1000})
 ;
