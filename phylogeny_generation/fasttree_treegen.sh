@@ -5,8 +5,6 @@
 #SBATCH --mem=120G
 #SBATCH --time=48:00:00
 #SBATCH --output=nj_treegen.log
-#SBATCH --mail-user=gs69042@uga.edu
-#SBATCH --mail-type=END,FAIL
 
 ml FastTree
 
