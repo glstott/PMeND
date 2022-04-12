@@ -30,8 +30,8 @@ if (params.input != null){
    input_dir = params.input 
 }
 
-if (params.temp_out != null){
-    temp_out_dir = params.temp_out
+if (params.temp_out_dir != null){
+    temp_out_dir = params.temp_out_dir
 }
 
 // As for other parameters, such as number of threads, we can make that a user
@@ -45,7 +45,9 @@ if (params.threads != null){
 // Channels are First in, First out datastructures that process individual data in 
 // specific ways. Here, we use a simple regex to find the particular files that will be 
 // inputs for your process
-input_files = Channel.fromPath( '$input_dir/*.fasta' )
+input_files = Channel.fromPath( '$input_dir*.fasta' )
+
+log.info "$input_dir - $output_dir - $temp_out_dir"
 
 process mafft{
     
@@ -67,7 +69,7 @@ process mafft{
 
     // Here we need to establish an output that will be funneled into a new channel
     output:
-    file("${alignOut}.aligned.fasta") into alignedFasta
+    file("${fasta.simpleName}.aligned.fasta") into alignedFasta
     // from your command, what is output that we need to work with in future processes?
     // look at the script portion below, maybe the output is specified there.
 
@@ -76,9 +78,8 @@ process mafft{
     // for example, how do we incorporate the thread parameter? or the input files? Also where are we getting the 'reference.fasta'
     // give it a try to figure it out!
     script:
-    alignOut = fasta.simpleName
     """
-    mafft --6merpair --thread ${threads} --addfragments ${fasta} ../../data/EPI_ISL_402124.fasta > ${temp_out_dir + alignOut}.aligned.fasta
+    mafft --6merpair --thread ${threads} --addfragments ${fasta} ../../data/EPI_ISL_402124.fasta > ${fasta.simpleName}.aligned.fasta
     """
 
 }
@@ -94,13 +95,13 @@ process fasttree {
     cpus threads
 
     input:
-    file(fasta) in alignedFasta
+    file(fasta1) in alignedFasta
 
     output:
-    file("${fastabaseName}.nwk")
+    file("${fasta1.baseName}.nwk")
     
     script:
     """
-    FastTree -gtr -nt $fasta > ${fasta.baseName}.nwk
+    FastTree -gtr -nt $fasta1 > ${fasta1.baseName}.nwk
     """
 }
