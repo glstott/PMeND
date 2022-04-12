@@ -1,0 +1,7 @@
+name: mafft
+channels:
+  - bioconda
+  - defaults
+dependencies:
+  - fasttree
+prefix: /home/noahaus/.conda/envs/fasttree

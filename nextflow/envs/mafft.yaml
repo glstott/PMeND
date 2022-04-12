@@ -1,0 +1,7 @@
+name: mafft
+channels:
+  - bioconda
+  - defaults
+dependencies:
+  - mafft
+prefix: /home/noahaus/.conda/envs/mafft
