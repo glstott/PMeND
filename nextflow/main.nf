@@ -91,28 +91,56 @@ process mafft{
 
 // And that's kind of the basics! from there, you can solutions by googling
 // heres a more blank version of the iqtree process after aligning the sequences
+if (run_mode == 'fast'){
+    process fasttree {
+        publishDir = output_dir
 
-process fasttree {
-    publishDir = output_dir
+        conda "$workflow.projectDir/envs/fasttree.yaml"
 
-    conda "$workflow.projectDir/envs/fasttree.yaml"
-
-    cpus threads
-    memory mem
-    time "6h"
-    queue "batch"
-    clusterOptions "--ntasks 16"
+        cpus threads
+        memory mem
+        time "6h"
+        queue "batch"
+        clusterOptions "--ntasks 16"
 
 
 
-    input:
-    file fasta from alignedFasta
+        input:
+        file fasta from alignedFasta
 
-    output:
-    file("${fasta.baseName}.nwk")
-    
-    script:
-    """
-    FastTree -gtr -nt $fasta > ${fasta.baseName}.nwk
-    """
+        output:
+        file("${fasta.baseName}.nwk") into phylogeny_ch
+        
+        script:
+        """
+        FastTree -gtr -nt $fasta > ${fasta.baseName}.nwk
+        """
+    }
+} else {
+
+    process iqtree {
+        publishDir = output_dir
+
+        conda "$workflow.projectDir/envs/iqtree.yaml"
+
+        cpus threads
+        memory mem
+        time "18h"
+        queue "batch"
+        clusterOptions "--ntasks 16"
+
+
+
+        input:
+        file fasta from alignedFasta
+
+        output:
+        file("*") into phylogeny_ch
+        
+        script:
+        """
+        iqtree -s $fasta -p /scratch/gs69042/PMeND/phylogeny_generation/partitions.txt -m GTR -pre ${fasta.baseName}.iqt -nt $threads
+        """
+    }
+
 }

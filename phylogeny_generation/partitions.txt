@@ -1,0 +1,3 @@
+DNA, codon1 = 1-30520\3
+DNA, codon2 = 2-30520\3
+DNA, codon3 = 3-30520\3

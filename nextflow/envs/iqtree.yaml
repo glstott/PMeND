@@ -1,0 +1,7 @@
+name: iqtree
+channels:
+  - bioconda
+  - defaults
+dependencies:
+  - iqtree
+prefix: /home/gs69042/.conda/envs/iqtree
