@@ -78,7 +78,7 @@ process mafft{
     script:
     alignOut = fasta.simpleName
     """
-    mafft --6merpair --thread ${threads} --addfragments ${fasta} reference.fasta > ${temp_out_dir + alignOut}.aligned.fasta
+    mafft --6merpair --thread ${threads} --addfragments ${fasta} ../../data/EPI_ISL_402124.fasta > ${temp_out_dir + alignOut}.aligned.fasta
     """
 
 }
