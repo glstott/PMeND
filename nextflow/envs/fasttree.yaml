@@ -4,4 +4,4 @@ channels:
   - defaults
 dependencies:
   - fasttree
-prefix: /home/noahaus/.conda/envs/fasttree
+prefix: /home/gs69042/.conda/envs/fasttree

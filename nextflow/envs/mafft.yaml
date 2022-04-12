@@ -4,4 +4,4 @@ channels:
   - defaults
 dependencies:
   - mafft
-prefix: /home/noahaus/.conda/envs/mafft
+prefix: /home/gs69042/.conda/envs/mafft
