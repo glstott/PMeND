@@ -1,4 +1,5 @@
-// Authors: Garrick Stotts (project leader), Noah Legall 
+#!/usr/bin/env nextflow
+// Authors: Garrick Stott (project leader), Noah Legall 
 // Purpose: A simple use case of using Nextflow to populate a Tree Aligned Graph (TAG)
 //          Potential to automate fully 
 
@@ -20,9 +21,9 @@ Manifest's pipeline version: $workflow.manifest.version
 
 // So we start by having to establish where the data comes from. 
 // As a default location we can assume maybe it's the current directory
-input_dir = "./"
 temp_out_dir = "./"
-output_dir = "./"
+output_dir = "../out/"
+mem = "64GB"
 
 // but we can add flexibility by allowing the user provide a parameter
 // Of course, we have to check if the parameter variable is populated
@@ -45,9 +46,9 @@ if (params.threads != null){
 // Channels are First in, First out datastructures that process individual data in 
 // specific ways. Here, we use a simple regex to find the particular files that will be 
 // inputs for your process
-input_files = Channel.fromPath( '$input_dir*.fasta' )
+input_files = Channel.fromPath( "$input_dir*.fasta" )
 
-log.info "$input_dir - $output_dir - $temp_out_dir"
+log.info "$input_files"
 
 process mafft{
     
@@ -56,6 +57,10 @@ process mafft{
     conda "$workflow.projectDir/envs/mafft.yaml"//where can we get the information on the environment from? maybe check out mbovpan for an idea
 
     cpus threads //perfect place to put your thread parameter
+    memory mem
+    time "6h"
+    queue "batch"
+    clusterOptions "--ntasks 16"
     
     publishDir = temp_out_dir
 
@@ -65,7 +70,7 @@ process mafft{
     // The process needs files to work on, so we use the input directive to establish the files to work on
     // it pulls from our initial channel.
     input:
-    file(fasta) from input_files
+    file fasta from input_files
 
     // Here we need to establish an output that will be funneled into a new channel
     output:
@@ -79,7 +84,7 @@ process mafft{
     // give it a try to figure it out!
     script:
     """
-    mafft --6merpair --thread ${threads} --addfragments ${fasta} ../../data/EPI_ISL_402124.fasta > ${fasta.simpleName}.aligned.fasta
+    mafft --6merpair --thread ${threads} --addfragments ${fasta} /scratch/gs69042/PMeND/data/EPI_ISL_402124.fasta > ${fasta.simpleName}.aligned.fasta
     """
 
 }
@@ -93,15 +98,21 @@ process fasttree {
     conda "$workflow.projectDir/envs/fasttree.yaml"
 
     cpus threads
+    memory mem
+    time "6h"
+    queue "batch"
+    clusterOptions "--ntasks 16"
+
+
 
     input:
-    file(fasta1) in alignedFasta
+    file fasta from alignedFasta
 
     output:
-    file("${fasta1.baseName}.nwk")
+    file("${fasta.baseName}.nwk")
     
     script:
     """
-    FastTree -gtr -nt $fasta1 > ${fasta1.baseName}.nwk
+    FastTree -gtr -nt $fasta > ${fasta.baseName}.nwk
     """
 }
