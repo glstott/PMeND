@@ -24,6 +24,7 @@ Manifest's pipeline version: $workflow.manifest.version
 temp_out_dir = "./"
 output_dir = "../out/"
 mem = "64GB"
+run_mode = "iqtree"
 
 // but we can add flexibility by allowing the user provide a parameter
 // Of course, we have to check if the parameter variable is populated
@@ -37,6 +38,9 @@ if (params.temp_out_dir != null){
 
 if (params.output_dir != null){
     output_dir = params.output_dir
+}
+if (params.run_mode != null){
+    run_mode = params.run_mode
 }
 
 // As for other parameters, such as number of threads, we can make that a user
