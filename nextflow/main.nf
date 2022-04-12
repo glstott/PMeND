@@ -35,6 +35,10 @@ if (params.temp_out_dir != null){
     temp_out_dir = params.temp_out_dir
 }
 
+if (params.output_dir != null){
+    output_dir = params.output_dir
+}
+
 // As for other parameters, such as number of threads, we can make that a user
 // defined parameter too. Use what you did above and define a thread parameter
 threads = 1
