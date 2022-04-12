@@ -26,19 +26,19 @@ output_dir = "./"
 
 // but we can add flexibility by allowing the user provide a parameter
 // Of course, we have to check if the parameter variable is populated
-if (param.input != null){
-   input_dir = param.input 
+if (params.input != null){
+   input_dir = params.input 
 }
 
-if (param.temp_out != null){
-    temp_out_dir = param.temp_out
+if (params.temp_out != null){
+    temp_out_dir = params.temp_out
 }
 
 // As for other parameters, such as number of threads, we can make that a user
 // defined parameter too. Use what you did above and define a thread parameter
 threads = 1
-if (param.threads != null){
-    threads = param.threads
+if (params.threads != null){
+    threads = params.threads
 }
 
 // Nextflow has two really important features - the 'process' and 'channels'
