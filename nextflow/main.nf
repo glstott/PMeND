@@ -97,10 +97,10 @@ process fasttree {
     file(fasta) in alignedFasta
 
     output:
-    file("${fasta}.nwk")
+    file("${fastabaseName}.nwk")
     
     script:
     """
-    FastTree -gtr -nt $fasta > ${fasta}.nwk
+    FastTree -gtr -nt $fasta > ${fasta.baseName}.nwk
     """
 }
