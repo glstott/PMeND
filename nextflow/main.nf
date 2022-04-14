@@ -83,7 +83,6 @@ if (run_mode == 'fast'){
         conda "$workflow.projectDir/envs/fasttree.yaml"
 
         // Set slurm options. Eventually, I'll parameterize. Hard-coding for now.
-        cpus threads
         memory mem
         time "6h"
         queue "batch"
@@ -106,7 +105,6 @@ if (run_mode == 'fast'){
         publishDir = output_dir
         conda "$workflow.projectDir/envs/iqtree.yaml"
 
-        cpus threads
         memory mem
         time "72h"
         queue "batch"
