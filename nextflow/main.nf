@@ -1,11 +1,8 @@
 #!/usr/bin/env nextflow
 // Authors: Garrick Stott (project leader), Noah Legall 
 // Purpose: A simple use case of using Nextflow to populate a Tree Aligned Graph (TAG)
-//          Potential to automate fully 
 
-// We start off with a message that prints out to the screen
-// Useful from a user's perspective - at least we see basic info on the pipeline
-// the words in $'s are variables, and the ones referenced here are related to the nextflow script in general
+// Print log info to user screen.
 log.info """ 
     PMeND (v0.1)    
 =============================
@@ -19,99 +16,77 @@ Manifest's pipeline version: $workflow.manifest.version
 =============================
 """
 
-// So we start by having to establish where the data comes from. 
-// As a default location we can assume maybe it's the current directory
+// Set default parameter values
 temp_out_dir = "./"
 output_dir = "../out/"
 mem = "64GB"
+threads = 8
 run_mode = "iqtree"
 
-// but we can add flexibility by allowing the user provide a parameter
-// Of course, we have to check if the parameter variable is populated
+// Check for user inputs
 if (params.input != null){
    input_dir = params.input 
-}
-
+} 
 if (params.temp_out_dir != null){
     temp_out_dir = params.temp_out_dir
 }
-
 if (params.output_dir != null){
     output_dir = params.output_dir
 }
 if (params.run_mode != null){
     run_mode = params.run_mode
 }
-
-// As for other parameters, such as number of threads, we can make that a user
-// defined parameter too. Use what you did above and define a thread parameter
 threads = 1
 if (params.threads != null){
     threads = params.threads
 }
 
-// Nextflow has two really important features - the 'process' and 'channels'
-// Channels are First in, First out datastructures that process individual data in 
-// specific ways. Here, we use a simple regex to find the particular files that will be 
-// inputs for your process
+// Input fasta files for tree building process
 input_files = Channel.fromPath( "$input_dir*.fasta" )
+log.info "List of files to be used: \n$input_files\n"
 
-log.info "$input_files"
-
+// Align fasta sequences to a reference strain (Original Wuhan sequence) with MAFFT
 process mafft{
-    
-    // A cool thing about Nextflow is that we can treat each process like it's  own little environment
-    // Conda is a tool that allows use to specify computing environments without leading to dependency clashes. 
-    conda "$workflow.projectDir/envs/mafft.yaml"//where can we get the information on the environment from? maybe check out mbovpan for an idea
+    // Initialize environment in conda
+    conda "$workflow.projectDir/envs/mafft.yaml"
 
-    cpus threads //perfect place to put your thread parameter
+    // Set slurm options.
+    cpus threads 
     memory mem
     time "6h"
     queue "batch"
-    clusterOptions "--ntasks 16"
+    clusterOptions "--ntasks $threads"
     
+    // Establish output directory
     publishDir = temp_out_dir
-
-    // There might be other important process attributes to add, but I'll leave that to you to discover -
-    // https://www.nextflow.io/docs/latest/process.html
     
-    // The process needs files to work on, so we use the input directive to establish the files to work on
-    // it pulls from our initial channel.
     input:
     file fasta from input_files
-
-    // Here we need to establish an output that will be funneled into a new channel
+    
     output:
     file("${fasta.simpleName}.aligned.fasta") into alignedFasta
-    // from your command, what is output that we need to work with in future processes?
-    // look at the script portion below, maybe the output is specified there.
-
-    // Last but not least, we need to give instructions on what we want to run!
-    // below you need to change a few things to have it incorporate the data the process specifies
-    // for example, how do we incorporate the thread parameter? or the input files? Also where are we getting the 'reference.fasta'
-    // give it a try to figure it out!
+    
+    // Add new fragments to the existing alignment set by the original wuhan sequence.
     script:
     """
-    mafft --6merpair --thread ${threads} --addfragments ${fasta} /scratch/gs69042/PMeND/data/EPI_ISL_402124.fasta > ${fasta.simpleName}.aligned.fasta
+    mafft --6merpair --thread ${threads} --addfragments ${fasta} $input_dir/../EPI_ISL_402124.fasta > ${fasta.simpleName}.aligned.fasta
     """
 
 }
 
-// And that's kind of the basics! from there, you can solutions by googling
-// heres a more blank version of the iqtree process after aligning the sequences
+
+// Check if the user is looking for fast ML trees or IQ Tree and build accordingly.
 if (run_mode == 'fast'){
     process fasttree {
+        // establish output directory and location for FastTree environment file
         publishDir = output_dir
-
         conda "$workflow.projectDir/envs/fasttree.yaml"
 
-        cpus threads
+        // Set slurm options. Eventually, I'll parameterize. Hard-coding for now.
         memory mem
         time "6h"
         queue "batch"
-        clusterOptions "--ntasks 16"
-
-
+        clusterOptions "--ntasks $threads"
 
         input:
         file fasta from alignedFasta
@@ -128,16 +103,12 @@ if (run_mode == 'fast'){
 
     process iqtree {
         publishDir = output_dir
-
         conda "$workflow.projectDir/envs/iqtree.yaml"
 
-        cpus threads
         memory mem
         time "72h"
         queue "batch"
-        clusterOptions "--ntasks 16"
-
-
+        clusterOptions "--ntasks $threads"
 
         input:
         file fasta from alignedFasta
@@ -152,3 +123,11 @@ if (run_mode == 'fast'){
     }
 
 }
+
+
+// Initialize sandbox for Neo4j (using a docker image)
+// https://www.nextflow.io/docs/latest/docker.html ; https://neo4j.com/developer/docker-run-neo4j/ ; https://neo4j.com/docs/operations-manual/current/docker/introduction/
+// Still looking into things here. I want to ensure that the user isn't forced to start from scratch each time they begin the 
+//   pipeline. It would be nice to have a NF pipeline that builds the Neo4j server for the user only if it's the first time
+//   or if they don't have their own DB connection info to pass along. I'll start with the assumption of a new user each time.
+
