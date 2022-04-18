@@ -133,7 +133,7 @@ if (run_mode == 'fast'){
 
         cpus threads
         memory mem
-        time "18h"
+        time "72h"
         queue "batch"
         clusterOptions "--ntasks 16"
 
