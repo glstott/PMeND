@@ -1,5 +1,5 @@
 // Loop through thresholds to plot average size and number of clusters
-UNWIND range(4,365,1) AS threshold
+UNWIND range(4,180,1) AS threshold
 CALL gds.graph.drop('calc_dist') YIELD graphName as graph1
 WITH graph1, threshold
 CALL gds.graph.project.cypher(
@@ -12,4 +12,5 @@ WITH graph, threshold
 CALL gds.wcc.stream(graph)
 YIELD nodeId, componentId
 WITH threshold, componentId, COUNT(DISTINCT nodeId) AS clusterSize
-RETURN threshold, COUNT(DISTINCT componentId) AS clusterCount, AVG(clusterSize) AS avg_ClusterSize;
+WHERE clusterSize >= 2
+RETURN threshold, COUNT(DISTINCT componentId) AS clusterCount, AVG(clusterSize) AS avg_ClusterSize, SUM(clusterSize) AS totalRepresented;
