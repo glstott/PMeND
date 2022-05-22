@@ -13,4 +13,5 @@ CALL gds.wcc.stream(graph)
 YIELD nodeId, componentId
 WITH threshold, componentId, COUNT(DISTINCT nodeId) AS clusterSize
 WHERE clusterSize >= 2
-RETURN threshold, COUNT(DISTINCT componentId) AS clusterCount, AVG(clusterSize) AS avg_ClusterSize, SUM(clusterSize) AS totalRepresented;
+RETURN threshold, COUNT(DISTINCT componentId) AS clusterCount, AVG(clusterSize) AS avg_ClusterSize, SUM(clusterSize) AS totalRepresented, 
+  MAX(clusterSize) AS max_cluster;
