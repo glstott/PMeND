@@ -131,6 +131,9 @@ if (run_mode == 'fast'){
 //   pipeline. It would be nice to have a NF pipeline that builds the Neo4j server for the user only if it's the first time
 //   or if they don't have their own DB connection info to pass along. I'll start with the assumption of a new user each time.
 // singularity instance start     --bind $HOME/neo4j_empty/data:/data     --bind $HOME/neo4j_empty/logs:/logs     --bind $HOME/neo4j_empty/import:/var/lib/neo4j/import     --bind $HOME/neo4j_empty/plugins:/plugins --bind $HOME/neo4j_empty/conf:/var/lib/neo4j/conf    --env NEO4J_AUTH=neo4j/test --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes docker://neo4j:latest test_neo
+// singularity shell instance://test_neo
+// neo4j start
+// cypher-shell -u neo4j -p test
 if (!params.db_location) {
     process new_db {
         container "neo4j:latest"
