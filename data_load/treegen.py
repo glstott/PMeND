@@ -1,32 +1,29 @@
 import pandas as pd
 import dendropy
 import numpy as np
+import sys
 
-# loop through directory with Newick Files, then generate a dataframe of edges.
-path = "/scratch/gs69042/bahllab/"
-combined_df = pd.DataFrame()
-for file in os.listdir(path):
-    if '.nwk' in file:
-        tr1 = ph.read_newick(path+file)
-    else:
-        continue
-    print(file)
-    parents = tr1.parent[1:].apply(int).sort_values(ascending=False).unique()
-    for parent1 in parents:
-        parent = str(parent1)
-        if parent:
-            parentid = "|".join(tr1[tr1.parent == parent].id.sort_values().apply(lambda x: x if "|" in x else x.split('/')[2]))
+# generate a dataframe of edges.
+path = str(sys.argv[1])
+tr1 = ph.read_newick(path)
+print(path)
 
-            tr1.loc[tr1.parent == parent, 'parent'] = parentid
-            tr1.loc[tr1.id == parent, 'id'] = parentid
-    tr1.loc[tr1.type == 'leaf', 'id'] = tr1.loc[tr1.type == 'leaf', 'id'].apply(lambda x: x.split("/")[2])
-    tr1['source'] = file
-    print(tr1.head())
-    if len(combined_df) > 1:
-        combined_df = pd.concat([combined_df, tr1])
-    else:
-        combined_df = tr1
-    print("-------------------------")
+# Find list of unique parents. For each, generate a unique long id from concatenation of children.
+#   This will likely run out of space. I need to come up with a better solution.
+parents = tr1.parent[1:].apply(int).sort_values(ascending=False).unique()
+for parent1 in parents:
+    parent = str(parent1)
+    if parent:
+        parentid = "|".join(tr1[tr1.parent == parent].id.sort_values().apply(lambda x: x if "|" in x else x.split('/')[2]))
+
+        tr1.loc[tr1.parent == parent, 'parent'] = parentid
+        tr1.loc[tr1.id == parent, 'id'] = parentid
+
+# Shorten the names of the leaves and save source info. 
+tr1.loc[tr1.type == 'leaf', 'id'] = tr1.loc[tr1.type == 'leaf', 'id'].apply(lambda x: x.split("/")[2])
+tr1['source'] = path
+print(tr1.head())
+print("-------------------------")
 
 # output to file
-combined_df.to_csv('neo_ready.csv', index=False)
+tr1.to_csv(str(sys.argv[2]), index=False)

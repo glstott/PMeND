@@ -134,14 +134,94 @@ if (run_mode == 'fast'){
 // singularity shell instance://test_neo
 // neo4j start
 // cypher-shell -u neo4j -p test
-if (!params.db_location) {
+dbDir = '/home/gs69042/neo4j_empty'
+dbPath = file(dbDir)
+if (dbPath.list().size() == 0) {
+    // Create subdirectories needed for Neo4j Docker Image
+    new File(dbDir + '/data').mkdir()
+    new File(dbDir + '/logs').mkdir()
+    new File(dbDir + '/run').mkdir()
+    new File(dbDir + '/plugins').mkdir()
+    new File(dbDir + '/import').mkdir()
+    
     process new_db {
-        container "neo4j:latest"
-        run_options "-p7474:7474 -p7687:7687     -d     -v $HOME/neo4j/data:/data     -v $HOME/neo4j/logs:/logs     -v $HOME/neo4j/import:/var/lib/neo4j/import     -v $HOME/neo4j/plugins:/plugins     --env NEO4J_AUTH=neo4j/test"
+        container "docker://neo4j:latest"
+        containerOptions "--bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind /home/gs69042/neo4j_empty/data:/data --bind /home/gs69042/neo4j_empty/logs:/logs --bind /home/gs69042/neo4j_empty/plugins:/plugins --bind /home/gs69042/neo4j_empty/run:/var/lib/neo4j/run    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes "
 
+        cpus threads 
+        memory mem
+        time "6h"
+        queue "batch"
+        clusterOptions "--ntasks $threads"
+        
         script:
         """
+        neo4j-admin set-initial-password test
+
+        curl https://github.com/neo4j-contrib/neo4j-apoc-procedures/releases/download/4.3.0.6/apoc-4.3.0.6-all.jar > $dbDir/plugins/apoc-4.3.0.6-all.jar
+        curl https://github.com/neo4j/graph-data-science/releases/download/2.1.2/neo4j-graph-data-science-2.1.2.jar > $dbDir/plugins/neo4j-graph-data-science-2.1.2.jar
+
+        neo4j start
         
+        until cypher-shell -u neo4j -p test "CREATE INDEX sample_name FOR (n:sample) ON (n.name);" 
+        do
+            echo "create node failed, sleeping"
+            sleep 6
+        done
+        
+        cypher-shell -u neo4j -p test "CREATE INDEX phylogeny_id FOR (n:phylogeny) ON (n.id);" 
+        cypher-shell -u neo4j -p test "CREATE INDEX source_relationship3 FOR ()-[r:calculated_distance]->() ON (r.source_id);" 
+        cypher-shell -u neo4j -p test "CREATE INDEX source_relationship FOR ()-[r:child_of]->() ON (r.source_id);" 
+        
+        echo "Mission Success"
+        neo4j stop
         """
     }
+}
+
+process tree_to_csv {
+    publishDir = dbDir + '/import'
+    input:
+    file phylogeny from phylogeny_ch
+    output:
+    file("${phylogeny.baseName}.csv") into phylo_csv
+
+    script:
+    '''
+    python3 ../data_load/treegen.py $phylogeny ${phylogeny.baseName}.csv
+    '''
+}
+
+process load_data {
+    container "docker://neo4j:latest"
+    containerOptions "--bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind /home/gs69042/neo4j_empty/data:/data --bind /home/gs69042/neo4j_empty/logs:/logs --bind /home/gs69042/neo4j_empty/plugins:/plugins --bind /home/gs69042/neo4j_empty/run:/var/lib/neo4j/run    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes "
+    
+
+    cpus threads 
+    memory mem
+    time "6h"
+    queue "batch"
+    clusterOptions "--ntasks $threads"
+    
+    input: 
+    file csv from phylo_csv
+
+    script:
+    """
+    neo4j start
+    
+    until cypher-shell -u neo4j -p test "CREATE (t:test {id: 'AbsolutelyRidiculous'});" 
+    do
+        echo "create node failed, sleeping"
+        sleep 6
+    done
+
+    
+    echo "Mission Success"
+    neo4j stop
+    """
+}
+
+process analyze_tree {
+
 }
