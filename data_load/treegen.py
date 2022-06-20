@@ -2,6 +2,7 @@ import pandas as pd
 import dendropy
 import numpy as np
 import sys
+import phylopandas as ph
 
 # generate a dataframe of edges.
 path = str(sys.argv[1])
@@ -19,7 +20,7 @@ for parent1 in parents:
         tr1.loc[tr1.parent == parent, 'parent'] = parentid
         tr1.loc[tr1.id == parent, 'id'] = parentid
 
-# Shorten the names of the leaves and save source info. 
+# Shorten the names of the leaves and save source info. In the future, we should move the name changes to outside this script in case someone wants to use this pipeline for non-SC2 sequences or sequences not from GISAID.
 tr1.loc[tr1.type == 'leaf', 'id'] = tr1.loc[tr1.type == 'leaf', 'id'].apply(lambda x: x.split("/")[2])
 tr1['source'] = path
 print(tr1.head())

@@ -22,6 +22,7 @@ output_dir = "../out/"
 mem = "64GB"
 threads = 8
 run_mode = "iqtree"
+input_dir = "/scratch/gs69042/PMeND/data/example"
 
 // Check for user inputs
 if (params.input != null){
@@ -42,7 +43,7 @@ if (params.threads != null){
 }
 
 // Input fasta files for tree building process
-input_files = Channel.fromPath( "$input_dir*.fasta" )
+input_files = Channel.fromPath( "$input_dir/*.fasta" )
 log.info "List of files to be used: \n$input_files\n"
 
 // Align fasta sequences to a reference strain (Original Wuhan sequence) with MAFFT
@@ -92,11 +93,11 @@ if (run_mode == 'fast'){
         file fasta from alignedFasta
 
         output:
-        file("${fasta.baseName}.nwk") into phylogeny_ch
+        file("${fasta.name}.nwk") into phylogeny_ch
         
         script:
         """
-        FastTree -gtr -nt $fasta > ${fasta.baseName}.nwk
+        FastTree -gtr -nt $fasta > ${fasta.name}.nwk
         """
     }
 } else {
@@ -118,7 +119,7 @@ if (run_mode == 'fast'){
         
         script:
         """
-        iqtree -s $fasta -p /scratch/gs69042/PMeND/phylogeny_generation/partitions.txt -m GTR -pre ${fasta.baseName}.iqt -nt $threads
+        iqtree -s $fasta -m GTR -pre ${fasta.name}.iqt -nt $threads
         """
     }
 
@@ -136,36 +137,58 @@ if (run_mode == 'fast'){
 // cypher-shell -u neo4j -p test
 dbDir = '/home/gs69042/neo4j_empty'
 dbPath = file(dbDir)
-if (dbPath.list().size() == 0) {
-    // Create subdirectories needed for Neo4j Docker Image
-    new File(dbDir + '/data').mkdir()
-    new File(dbDir + '/logs').mkdir()
-    new File(dbDir + '/run').mkdir()
-    new File(dbDir + '/plugins').mkdir()
-    new File(dbDir + '/import').mkdir()
-    
-    process new_db {
-        container "docker://neo4j:latest"
-        containerOptions "--bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind /home/gs69042/neo4j_empty/data:/data --bind /home/gs69042/neo4j_empty/logs:/logs --bind /home/gs69042/neo4j_empty/plugins:/plugins --bind /home/gs69042/neo4j_empty/run:/var/lib/neo4j/run    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes "
+containerSettings = "--bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind /home/gs69042/neo4j_empty/data:/data --bind /home/gs69042/neo4j_empty/logs:/logs --bind /home/gs69042/plugins:/plugins --bind /home/gs69042/neo4j_empty/run:/var/lib/neo4j/run --bind /home/gs69042/neo4j_empty/import:/import    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes "
 
+// If we don't see folders in the target directory, go ahead and make them. 
+//   Current state is naive, checking for quantity rather than specific paths. I will come back and correct @ a later date.
+if (dbPath.list().size() == 0) {
+    // Create subdirectories needed for Neo4j Docker Image. Singularity doesn't allow for auto-create.    
+    process load_plugins {
+        cpus threads 
+        memory "1GB"
+        time "15m"
+        queue "batch"
+        clusterOptions "--ntasks 1"
+
+        output:
+        val "Environment Ready" into seq_ch
+
+        shell:
+        """
+        mkdir $dbDir/logs
+        mkdir $dbDir/run
+        mkdir $dbDir/import
+        mkdir $dbDir/data
+        """
+    }
+
+    process new_db {
+        // Spawn docker image, accepting license agreement and binding relevant paths. 
+        container "docker://neo4j:latest"
+        containerOptions containerSettings
+
+        // Specify parameters for our HPC environment. We should move these to a conf file in the future to clean things up. 
         cpus threads 
         memory mem
-        time "6h"
+        time "15m"
         queue "batch"
         clusterOptions "--ntasks $threads"
+
+        input:
+        val x from seq_ch
+
         
+        // To spin up the database for the first time we:
+        //   1. set initial password
+        //   2. Spin up database and generate indices where needed downstream
         script:
         """
         neo4j-admin set-initial-password test
-
-        curl https://github.com/neo4j-contrib/neo4j-apoc-procedures/releases/download/4.3.0.6/apoc-4.3.0.6-all.jar > $dbDir/plugins/apoc-4.3.0.6-all.jar
-        curl https://github.com/neo4j/graph-data-science/releases/download/2.1.2/neo4j-graph-data-science-2.1.2.jar > $dbDir/plugins/neo4j-graph-data-science-2.1.2.jar
-
         neo4j start
         
         until cypher-shell -u neo4j -p test "CREATE INDEX sample_name FOR (n:sample) ON (n.name);" 
         do
-            echo "create node failed, sleeping"
+            echo "Create index failed, sleeping until DB running"
             sleep 6
         done
         
@@ -180,29 +203,42 @@ if (dbPath.list().size() == 0) {
 }
 
 process tree_to_csv {
-    publishDir = dbDir + '/import'
+    //conda "$workflow.projectDir/envs/python.yaml"
+    // change publish directory to the import folder of our database instance.
+    publishDir(path: dbDir + '/import', 
+        mode: 'copy', 
+        overwrite: true)
+    memory mem
+    time "1h"
+    queue "batch"
+    clusterOptions "--ntasks $threads"
+
+    // read in the newick files and output a csv.
     input:
     file phylogeny from phylogeny_ch
+
     output:
-    file("${phylogeny.baseName}.csv") into phylo_csv
+    file("${phylogeny.name}.csv") into phylo_csv
 
     script:
-    '''
-    python3 ../data_load/treegen.py $phylogeny ${phylogeny.baseName}.csv
-    '''
+    """
+    python $workflow.projectDir/../data_load/treegen.py $phylogeny ${phylogeny.name}.csv
+    """
 }
 
 process load_data {
+    // Open up the database with docker image
     container "docker://neo4j:latest"
-    containerOptions "--bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind /home/gs69042/neo4j_empty/data:/data --bind /home/gs69042/neo4j_empty/logs:/logs --bind /home/gs69042/neo4j_empty/plugins:/plugins --bind /home/gs69042/neo4j_empty/run:/var/lib/neo4j/run    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes "
+    containerOptions containerSettings
     
-
+    // HPC environment settings. 
     cpus threads 
     memory mem
     time "6h"
     queue "batch"
     clusterOptions "--ntasks $threads"
     
+    // Input files from phylogeny CSVs.
     input: 
     file csv from phylo_csv
 
@@ -210,18 +246,28 @@ process load_data {
     """
     neo4j start
     
-    until cypher-shell -u neo4j -p test "CREATE (t:test {id: 'AbsolutelyRidiculous'});" 
+    until cypher-shell -u neo4j -p test "MATCH (n:sample) RETURN DISTINCT n.source;" 
     do
         echo "create node failed, sleeping"
         sleep 6
     done
+    
+    if cypher-shell -u neo4j -p test "MATCH (n) RETURN DISTINCT n.source_id" | grep -q ${csv.name}; 
+    then
+        echo "${csv.name}" "already loaded."; 
+    else 
+        echo "Loading new file" "${csv.name}"; 
 
+        cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate('LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line WITH line WHERE line.type = \\'root\\' OR line.type = \\'node\\' RETURN DISTINCT line.id AS id, line.type AS type', 'CREATE (child:LICA:phylogeny {id: id, type: type, source_id: -1})',     {batchSize: 1000} );"
+
+        cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate( 'LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line WITH line WHERE line.type <> \\'root\\' AND line.type <> \\'node\\' RETURN DISTINCT line.id AS id, line.type AS type', 'CREATE (child:sample:phylogeny {id: id, type: type, source_id: 1})', {batchSize: 1000} );"
+    fi
     
     echo "Mission Success"
     neo4j stop
     """
 }
 
-process analyze_tree {
+// process analyze_tree {
 
-}
+// }
