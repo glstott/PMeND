@@ -21,7 +21,7 @@ temp_out_dir = "./"
 output_dir = "../out/"
 mem = "64GB"
 threads = 8
-run_mode = "iqtree"
+run_mode = "fast"
 input_dir = "/scratch/gs69042/PMeND/data/example"
 
 // Check for user inputs
@@ -134,24 +134,31 @@ if (run_mode == 'fast'){
 // singularity instance start     --bind $HOME/neo4j_empty/data:/data     --bind $HOME/neo4j_empty/logs:/logs     --bind $HOME/neo4j_empty/import:/import     --bind $HOME/plugins:/plugins --bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind /home/gs69042/neo4j_empty/run:/var/lib/neo4j/run   --env NEO4J_AUTH=neo4j/test --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes docker://neo4j:latest test_neo
 // singularity shell instance://test_neo
 // neo4j start
-// cypher-shell -u neo4j -p test
+// cypher-shell -u neo4j -p test "MATCH (s:sample)-[r:calculated_distance]->(t) RETURN s,t,r LIMIT 24;"
+
+// cypher-shell -u neo4j -p test "CREATE INDEX source_relationship3 FOR ()-[r:calculated_distance]->() ON (r.source_id);" 
+// cypher-shell -u neo4j -p test "CREATE INDEX source_relationship FOR ()-[r:child_of]->() ON (r.source_id);"
+requireStart = false
 dbDir = '/home/gs69042/neo4j_empty'
 dbPath = file(dbDir)
-containerSettings = "--bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind /home/gs69042/neo4j_empty/data:/data --bind /home/gs69042/neo4j_empty/logs:/logs --bind /home/gs69042/plugins:/plugins --bind /home/gs69042/neo4j_empty/run:/var/lib/neo4j/run --bind /home/gs69042/neo4j_empty/import:/import    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes "
+containerSettings = "--bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind /home/gs69042/neo4j_empty/data:/data --bind /home/gs69042/neo4j_empty/logs:/logs --bind /home/gs69042/plugins:/plugins --bind /home/gs69042/neo4j_empty/run:/var/lib/neo4j/run --bind /home/gs69042/neo4j_empty/import:/import    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes --env NEO4J_AUTH=neo4j/test"
 
 // If we don't see folders in the target directory, go ahead and make them. 
 //   Current state is naive, checking for quantity rather than specific paths. I will come back and correct @ a later date.
 if (dbPath.list().size() == 0) {
-    // Create subdirectories needed for Neo4j Docker Image. Singularity doesn't allow for auto-create.    
-    process load_plugins {
+    // Create subdirectories needed for Neo4j Docker Image. Singularity doesn't allow for auto-create, and pre-scripts don't allow for containerless script generation.  
+    requireStart = true 
+    process create_db_env {
         cpus threads 
         memory "1GB"
         time "15m"
         queue "batch"
         clusterOptions "--ntasks 1"
+        // we mustn't cache this one. Otherwise if something happens to the DB offline, it won't be correctly reinstantiated. This runs parallel with other processes so it shouldn't be a problem.
+        cache false
 
         output:
-        val "Environment Ready" into seq_ch
+        val "Environment Ready" into sequential_ch
 
         shell:
         """
@@ -173,10 +180,14 @@ if (dbPath.list().size() == 0) {
         time "15m"
         queue "batch"
         clusterOptions "--ntasks $threads"
+        // we mustn't cache this one. Otherwise if something happens to the DB offline, it won't be correctly reinstantiated. This runs parallel with other processes so it shouldn't be a problem.
+        cache false
 
         input:
-        val x from seq_ch
+        val x from sequential_ch
 
+        output:
+        val "Step complete" into db_ch
         
         // To spin up the database for the first time we:
         //   1. set initial password
@@ -193,8 +204,7 @@ if (dbPath.list().size() == 0) {
         done
         
         cypher-shell -u neo4j -p test "CREATE INDEX phylogeny_id FOR (n:phylogeny) ON (n.id);" 
-        cypher-shell -u neo4j -p test "CREATE INDEX source_relationship3 FOR ()-[r:calculated_distance]->() ON (r.source_id);" 
-        cypher-shell -u neo4j -p test "CREATE INDEX source_relationship FOR ()-[r:child_of]->() ON (r.source_id);" 
+ 
         
         echo "Mission Success"
         neo4j stop
@@ -241,33 +251,88 @@ process load_data {
     // Input files from phylogeny CSVs.
     input: 
     file csv from phylo_csv
+    if (requireStart) {
+        val entry from db_ch
+    }
+
+    output:
+    env source_id into loaded_tree_ch
 
     script:
     """
     neo4j start
     
-    until cypher-shell -u neo4j -p test "MATCH (n:sample) RETURN DISTINCT n.source;" 
+    until cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN MAX(r.source_id);" 
     do
         echo "create node failed, sleeping"
         sleep 6
     done
     
-    if cypher-shell -u neo4j -p test "MATCH (n) RETURN DISTINCT n.source_id" | grep -q ${csv.name}; 
+    last=\$(cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN MAX(r.source_id);" | tail -n 1)
+
+    if cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN DISTINCT r.source" | grep -q ${csv.name}; 
     then
         echo "${csv.name}" "already loaded."; 
     else 
         echo "Loading new file" "${csv.name}"; 
 
-        cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate('LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line WITH line WHERE line.type = \\'root\\' OR line.type = \\'node\\' RETURN DISTINCT line.id AS id, line.type AS type', 'CREATE (child:LICA:phylogeny {id: id, type: type, source_id: -1})',     {batchSize: 1000} );"
+        cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate('LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line WITH line WHERE line.type = \\'root\\' OR line.type = \\'node\\' RETURN DISTINCT line.id AS id, line.type AS type', 'MERGE (child:LICA:phylogeny {id: id, type: type})',     {batchSize: 1000} );"
 
-        cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate( 'LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line WITH line WHERE line.type <> \\'root\\' AND line.type <> \\'node\\' RETURN DISTINCT line.id AS id, line.type AS type', 'CREATE (child:sample:phylogeny {id: id, type: type, source_id: 1})', {batchSize: 1000} );"
+        cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate( 'LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line WITH line WHERE line.type <> \\'root\\' AND line.type <> \\'node\\' RETURN DISTINCT line.id AS id, line.type AS type', 'MERGE (child:sample:phylogeny {id: id, type: type})', {batchSize: 1000} );"
+
+        cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate(' LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line  WITH line WHERE line.type = \\'leaf\\'  MATCH (child:sample:phylogeny {id: line.id})  MATCH (parent:LICA:phylogeny {id: line.parent})  RETURN child, parent, line', 'CREATE (child)-[:child_of {source: \\'${csv.name}\\', distance: toFloat(line.length),  source_id: toInteger(\${last+1})}]->(parent)', {batchSize: 1000});"
+
+        cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate('LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line  WITH line  WHERE line.type <> \\'leaf\\' AND line.type <> \\'root\\'  MATCH (child:LICA:phylogeny {id: line.id})  MATCH (parent:LICA:phylogeny {id: line.parent})  RETURN child, parent, line ', 'CREATE (child)-[:child_of {source: \\'${csv.name}\\', distance: toFloat(line.length),  source_id:  toInteger(\${last+1})}]->(parent) ',  {batchSize: 1000}); "
+        
     fi
-    
+    source_id=\${last+1}
     echo "Mission Success"
     neo4j stop
     """
 }
 
-// process analyze_tree {
+process patristicCalculation {
+    // Spawn docker image, accepting license agreement and binding relevant paths. 
+    container "docker://neo4j:latest"
+    containerOptions containerSettings
 
-// }
+    // Specify parameters for our HPC environment. We should move these to a conf file in the future to clean things up. 
+    cpus threads 
+    memory mem
+    time "15m"
+    queue "batch"
+    clusterOptions "--ntasks $threads"
+
+    input:
+    val source_id from loaded_tree_ch
+
+    script:
+    """
+    neo4j start
+    
+    until cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN MAX(r.source_id);"
+    do
+        echo "create node failed, sleeping"
+        sleep 6
+    done
+    
+    if cypher-shell -u neo4j -p test "MATCH (n)-[r:calculated_distance]->(m) RETURN DISTINCT r.source_id" | grep -q ${source_id}; 
+    then
+        echo "${source_id}" "already loaded."; 
+    else 
+        echo "Loading new patristic distances" "${source_id}"; 
+
+        cypher-shell -u neo4j -p test "CALL gds.graph.drop('trees', false);"
+        cypher-shell -u neo4j -p test "CALL gds.graph.drop('one_tree', false);"
+
+        cypher-shell -u neo4j -p test "CALL gds.graph.project('trees', 'phylogeny', {child_of: {properties: ['source_id', 'distance'], orientation: 'UNDIRECTED'}}) YIELD graphName AS gn, nodeCount AS nc, relationshipCount AS rc WITH gn, nc, rc CALL gds.beta.graph.project.subgraph('one_tree', 'trees', '*', 'r.source_id > ${source_id.toInteger()-1}.0 AND r.source_id < ${source_id.toInteger()+1}.0') yield graphName AS subgraph_name, nodeCount AS subgraph_nc, relationshipCount AS subgraph_rc RETURN gn, nc, rc, subgraph_name, subgraph_nc, subgraph_rc; "
+
+        cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate('MATCH (source:sample)-[r:child_of {source_id: $source_id}]->(), (target:sample)-[r2:child_of {source_id: $source_id}]->() WITH source, target, r.source AS src WHERE id(source) < id(target) AND r.source=r2.source CALL gds.shortestPath.dijkstra.stream(\\'one_tree\\', {  relationshipWeightProperty: \\'distance\\', sourceNode: id(source), targetNode: id(target) }) YIELD sourceNode, targetNode, totalCost AS distance WHERE gds.util.isFinite(distance) = true AND distance <= 0.5 RETURN source, target, distance, src', 'CREATE (source)-[:calculated_distance {source: src, distance: distance,  source_id: $source_id}]->(target)', {batchSize: 1000});"
+        
+    fi
+    
+    echo "Mission Success"
+    neo4j stop
+    """
+
+}
