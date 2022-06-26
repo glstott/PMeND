@@ -306,6 +306,9 @@ process patristicCalculation {
     input:
     val source_id from loaded_tree_ch
 
+    output:
+    val "$source_id" into patristic_ch
+
     script:
     """
     neo4j start
@@ -335,4 +338,59 @@ process patristicCalculation {
     neo4j stop
     """
 
+}
+
+MST_number=2000
+if ((params.mst != null) && (params.mst)) {
+    process generateMST {
+        // Spawn docker image, accepting license agreement and binding relevant paths. 
+        container "docker://neo4j:latest"
+        containerOptions containerSettings
+
+        // Specify parameters for our HPC environment. We should move these to a conf file in the future to clean things up. 
+        cpus threads 
+        memory mem
+        time "15m"
+        queue "batch"
+        clusterOptions "--ntasks $threads"
+
+        input:
+        val source_id from patristic_ch
+
+        script:
+        """
+        neo4j start
+        
+        until cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN MAX(r.source_id);"
+        do
+            echo "create node failed, sleeping"
+            sleep 6
+        done
+        
+        if cypher-shell -u neo4j -p test "MATCH (n)-[r:joint_MST]->(m) RETURN DISTINCT r.source_id" | grep -q ${source_id}; 
+        then
+            echo "${source_id}" "already loaded."; 
+        else 
+            echo "Loading new patristic distances" "${source_id}"; 
+
+            cypher-shell -u neo4j -p test "CALL gds.graph.drop('distance_graph', false);"
+            cypher-shell -u neo4j -p test "CALL gds.graph.drop('subgraph', false);"
+
+            cypher-shell -u neo4j -p test "CALL gds.graph.project('distance_graph', 'sample', {calculated_distance: {orientation: 'UNDIRECTED', properties: ['source_id', 'distance']}} ) YIELD graphName AS gn, nodeCount AS nc, relationshipCount AS rc RETURN gn, nc, rc;"
+
+            cypher-shell -u neo4j -p test "CALL gds.beta.graph.project.subgraph('subgraph', 'distance_graph', '*', 'r.source_id > ${source_id.toInteger()-1}.0 AND r.source_id < ${source_id.toInteger()+1}.0'  ) YIELD graphName AS gn, nodeCount AS nc, relationshipCount AS rc RETURN gn, nc, rc;" 
+
+            cypher-shell -u neo4j -p test "MATCH (n:sample)-[:child_of {source_id: $source_id}]->()  WITH DISTINCT id(n) AS iteration_number LIMIT $MST_number CALL gds.alpha.spanningTree.minimum.write('subgraph', {startNodeId: iteration_number,    relationshipWeightProperty: 'distance', writeProperty: 'MST_' + iteration_number + '_' + '$source_id', weightWriteProperty: 'distance_combined'}) YIELD computeMillis, writeMillis RETURN computeMillis AS coM, writeMillis AS wM;"
+            
+            cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate(    'MATCH (n:sample)-[r]-(:sample) WHERE type(r) ENDS WITH \\'$source_id\\' WITH n, COUNT(DISTINCT type(r)) AS max_width  MATCH (n)-[r]->(n2:sample) WHERE type(r) ENDS WITH \\'$source_id\\'  AND id(n) < id(n2)  RETURN max_width, n, n2, COUNT(DISTINCT r) AS edge_width, AVG(r.distance_combined) AS mean_dist', 'CREATE (n)-[:joint_MST {source: \\'$source_id\\', edge_width: edge_width / toFloat(max_width), mean_dist: mean_dist}]->(n2)', {batchSize: 10000}) YIELD batches AS batches, timeTaken AS timeTaken, failedBatches AS failedBatches RETURN batches, timeTaken, failedBatches;"
+
+            cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate('MATCH (:sample)-[r]->(:sample) WHERE type(r) ENDS WITH \\'$source_id\\' RETURN r', 'DELETE r', {batchSize: 10000}) YIELD batches AS batches, timeTaken AS timeTaken, failedBatches AS failedBatches RETURN batches, timeTaken, failedBatches;"
+
+        fi
+        
+        echo "Mission Success"
+        neo4j stop
+        """
+
+    }
 }
