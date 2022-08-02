@@ -96,6 +96,7 @@ if (params.tarball != null){
         time "1h"
         queue "batch"
         clusterOptions "--ntasks 1"
+        cache 'lenient'
 
         input:
         file fasta from merged_fasta
@@ -182,7 +183,7 @@ if (run_mode == 'fast'){
         stageInMode 'copy'
 
         memory mem
-        time "48h" 
+        time "96h" 
         queue "batch"
         clusterOptions "--ntasks $threads"
 
@@ -212,7 +213,7 @@ if (run_mode == 'fast'){
 // Still looking into things here. I want to ensure that the user isn't forced to start from scratch each time they begin the 
 //   pipeline. It would be nice to have a NF pipeline that builds the Neo4j server for the user only if it's the first time
 //   or if they don't have their own DB connection info to pass along. I'll start with the assumption of a new user each time.
-// dbDir='/home/gs69042/biweekly_db'
+// dbDir='/home/gs69042/GISAID_db'
 // singularity instance start --bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind $dbDir/data:/data --bind $dbDir/logs:/logs --bind /home/gs69042/plugins:/plugins --bind $dbDir/run:/var/lib/neo4j/run --bind $dbDir/import:/import    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes --env NEO4J_AUTH=neo4j/test docker://neo4j:latest test_neo
 // singularity shell instance://test_neo
 // neo4j start
@@ -289,7 +290,7 @@ if (dbPath.list().size() == 0) {
         done
         
         cypher-shell -u neo4j -p test "CREATE INDEX phylogeny_id FOR (n:sample) ON (n.id);" 
-        cypher-shell -u neo4j -p test "CREATE INDEX phylogeny_source FOR (n:LICA) ON (n.source);" 
+        cypher-shell -u neo4j -p test "CREATE INDEX phylogeny_source FOR (n:LICA) ON (n.id);" 
         cypher-shell -u neo4j -p test "CREATE INDEX source_relationship FOR ()-[r:child_of]->() ON (r.source_id);"
         cypher-shell -u neo4j -p test "CREATE INDEX source_relationship3 FOR ()-[r:calculated_distance]->() ON (r.source_id);"
  
@@ -415,9 +416,9 @@ if (params.patristic_mode == 'R'){
             sleep 6
         done
         
-        last=\$(cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN CASE WHEN MAX(r.source_id) IS NULL THEN 0 ELSE MAX(r.source_id) END;" | tail -n 1)
+        last=\$(cypher-shell -u neo4j -p test "MATCH (n)-[r:calculated_distance]->(m) RETURN CASE WHEN MAX(r.source_id) IS NULL THEN 0 ELSE MAX(r.source_id) END;" | tail -n 1)
 
-        if cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN DISTINCT r.source" | grep -q ${csv.simpleName}; 
+        if cypher-shell -u neo4j -p test "MATCH (n)-[r:calculated_distance]->(m) RETURN DISTINCT r.source" | grep -q ${csv.simpleName}; 
         then
             echo "${csv.simpleName}" "already loaded."; 
         else 
@@ -557,7 +558,7 @@ if ((params.mst != null) && (params.mst)) {
         // Specify parameters for our HPC environment. We should move these to a conf file in the future to clean things up. 
         cpus threads 
         memory mem
-        time "12h"
+        time "48h"
         queue "batch"
         clusterOptions "--ntasks $threads"
         maxForks 1
@@ -569,7 +570,7 @@ if ((params.mst != null) && (params.mst)) {
         """
         neo4j start
         
-        until cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN MAX(r.source_id);"
+        until cypher-shell -u neo4j -p test "MATCH (n)-[r]->(m) RETURN MAX(r.source_id);"
         do
             echo "create node failed, sleeping"
             sleep 6
@@ -588,7 +589,7 @@ if ((params.mst != null) && (params.mst)) {
 
             cypher-shell -u neo4j -p test "CALL gds.beta.graph.project.subgraph('subgraph', 'distance_graph', '*', 'r.source_id > ${source_id.toInteger()-1}.0 AND r.source_id < ${source_id.toInteger()+1}.0'  ) YIELD graphName AS gn, nodeCount AS nc, relationshipCount AS rc RETURN gn, nc, rc;" 
 
-            cypher-shell -u neo4j -p test "MATCH (n:sample)-[:child_of {source_id: $source_id}]->()  WITH DISTINCT id(n) AS iteration_number LIMIT $MST_number CALL gds.alpha.spanningTree.minimum.write('subgraph', {startNodeId: iteration_number,    relationshipWeightProperty: 'distance', writeProperty: 'MST_' + iteration_number + '_' + '$source_id', weightWriteProperty: 'distance_combined'}) YIELD computeMillis, writeMillis RETURN computeMillis AS coM, writeMillis AS wM;"
+            cypher-shell -u neo4j -p test "MATCH (n:sample)-[:calculated_distance {source_id: $source_id}]->()  WITH DISTINCT id(n) AS iteration_number LIMIT $MST_number CALL gds.alpha.spanningTree.minimum.write('subgraph', {startNodeId: iteration_number,    relationshipWeightProperty: 'distance', writeProperty: 'MST_' + iteration_number + '_' + '$source_id', weightWriteProperty: 'distance_combined'}) YIELD computeMillis, writeMillis RETURN computeMillis AS coM, writeMillis AS wM;"
             
             cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate(    'MATCH (n:sample)-[r]-(:sample) WHERE type(r) ENDS WITH \\'$source_id\\' WITH n, COUNT(DISTINCT type(r)) AS max_width  MATCH (n)-[r]->(n2:sample) WHERE type(r) ENDS WITH \\'$source_id\\'  AND id(n) < id(n2)  RETURN max_width, n, n2, COUNT(DISTINCT r) AS edge_width, AVG(r.distance_combined) AS mean_dist', 'CREATE (n)-[:joint_MST {source: \\'$source_id\\', edge_width: edge_width / toFloat(max_width), mean_dist: mean_dist}]->(n2)', {batchSize: 10000}) YIELD batches AS batches, timeTaken AS timeTaken, failedBatches AS failedBatches RETURN batches, timeTaken, failedBatches;"
 
