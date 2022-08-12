@@ -4,10 +4,9 @@
 
 // Print log info to user screen.
 log.info """ 
-    PMeND (v0.1)    
+    PMeND (v0.8)    
 =============================
-A graph database which enables storage of phylogenies as 
-Tree Aligned Graphs (TAGs) and integrates these data with sample metadata. 
+This pipeline generates a graph database which enables storage of phylogenies as Tree Aligned Graphs (TAG) and/or patristic distance networks along with their associated metadata. There is an option available for a MST network generation. 
 
 Project : $workflow.projectDir
 Git info: $workflow.repository - $workflow.revision [$workflow.commitId]
@@ -17,13 +16,16 @@ Manifest's pipeline version: $workflow.manifest.version
 """
 
 // Set default parameter values
-temp_out_dir = "./"
-output_dir = "../out/"
+temp_out_dir = "${workflow.projectDir}temp/"
+output_dir = "${workflow.projectDir}out/"
 mem = "64GB"
 threads = 8
-run_mode = "fast"
-input_dir = "/scratch/gs69042/PMeND/data/example"
+run_mode = "iqtree"
+input_dir = "${workflow.projectDir}input/"
 patThreshold = 0.5
+MST_number=2000
+dbDir = "${workflow.projectDir}db/"
+dbPassword = "test"
 
 // Check for user inputs
 if (params.input != null){
@@ -38,9 +40,23 @@ if (params.output_dir != null){
 if (params.run_mode != null){
     run_mode = params.run_mode
 }
-threads = 1
 if (params.threads != null){
     threads = params.threads
+}
+if (params.mem != null){
+   mem = params.mem 
+} 
+if (params.pat_threshold != null){
+    patThreshold = params.patThreshold
+}
+if (params.MST_number != null){
+    MST_number = params.MST_number
+}
+if (params.db_dir != null){
+    dbDir = params.db_dir
+}
+if (params.db_password != null){
+    dbPassword = params.db_password
 }
 
 if (params.tarball != null){
@@ -54,6 +70,8 @@ if (params.tarball != null){
         time "15m"
         queue "batch"
         clusterOptions "--ntasks 1"
+        // Establish output directory
+        publishDir = temp_out_dir
         // This process will untar GISAID download and merge files.
         input:
         file tar from input_files
@@ -73,6 +91,8 @@ if (params.tarball != null){
         time "15m"
         queue "batch"
         clusterOptions "--ntasks 1"
+        // Establish output directory
+        publishDir = temp_out_dir
         // This process will untar GISAID download and merge files.
         input:
         file fasta from raw_fasta.collect()
@@ -89,21 +109,55 @@ if (params.tarball != null){
         """
     }
 
+    // Align fasta sequences to a reference strain (Original Wuhan sequence) with MAFFT
+    
+    process mafft{
+        // Initialize environment in conda
+        conda "-c bioconda mafft"
+
+        // Set slurm options.
+        cpus threads 
+        memory mem
+        time "6h"
+        queue "batch"
+        clusterOptions "--ntasks $threads"
+        maxForks 12        
+
+        // Establish output directory
+        publishDir = temp_out_dir
+        
+        input:
+        file fasta from merged_fasta
+        
+        output:
+        file("${fasta.simpleName}.aligned.fasta") into aligned_fasta
+        
+        // Add new fragments to the existing alignment set by the original wuhan sequence.
+        script:
+        """
+        mafft --6merpair --thread ${threads} --addfragments ${fasta} $input_dir/../EPI_ISL_402124.fasta > ${fasta.simpleName}.aligned.fasta
+        """
+
+    }
+
     // Split data by epiweek and generate files for IQT
     process epiweek_split {
+        conda "-c bioconda biopython epiweeks pandas"
         cpus threads 
         memory "32GB"
         time "1h"
         queue "batch"
         clusterOptions "--ntasks 1"
         cache 'lenient'
+        publishDir = output_dir
+
 
         input:
-        file fasta from merged_fasta
+        file fasta from aligned_fasta
         file "${fasta.simpleName}.metadata.tsv" from merged_metadata
 
         output:
-        file "*.fasta" into prepped_fasta
+        file "*.fasta" into alignedFasta
         file "*.dt.tsv" into dates_tsv
         file "*.metadata.tsv" into metadata_tsv
 
@@ -116,38 +170,40 @@ if (params.tarball != null){
 } else {
     prepped_fasta = Channel.fromPath( "$input_dir/*.fasta" ).collect()
     dates_tsv = Channel.fromPath( "$input_dir/*.tsv" ).collect()
-}
 
-// Align fasta sequences to a reference strain (Original Wuhan sequence) with MAFFT
-if (run_mode != "external"){
-    process mafft{
-        // Initialize environment in conda
-        // conda "$workflow.projectDir/envs/mafft.yaml"
+    if (run_mode != "external"){
+        process mafft_individual{
+            // Initialize environment in conda
+            // conda "$workflow.projectDir/envs/mafft.yaml"
 
-        // Set slurm options.
-        cpus threads 
-        memory mem
-        time "6h"
-        queue "batch"
-        clusterOptions "--ntasks $threads"
-        
-        // Establish output directory
-        publishDir = temp_out_dir
-        
-        input:
-        file fasta from prepped_fasta.flatten()
-        
-        output:
-        file("${fasta.simpleName}.aligned.fasta") into alignedFasta
-        
-        // Add new fragments to the existing alignment set by the original wuhan sequence.
-        script:
-        """
-        mafft --6merpair --thread ${threads} --addfragments ${fasta} $input_dir/../EPI_ISL_402124.fasta > ${fasta.simpleName}.aligned.fasta
-        """
+            // Set slurm options.
+            cpus threads 
+            memory mem
+            time "6h"
+            queue "batch"
+            clusterOptions "--ntasks $threads"
+            maxForks 12        
 
+            // Establish output directory
+            publishDir = temp_out_dir
+            
+            input:
+            file fasta from prepped_fasta.flatten()
+            
+            output:
+            file("${fasta.simpleName}.aligned.fasta") into alignedFasta
+            
+            // Add new fragments to the existing alignment set by the original wuhan sequence.
+            script:
+            """
+            mafft --6merpair --thread ${threads} --addfragments ${fasta} $input_dir/../EPI_ISL_402124.fasta > ${fasta.simpleName}.aligned.fasta
+            """
+
+        }
     }
 }
+
+
 
 
 // Check if the user is looking for fast ML trees or IQ Tree and build accordingly.
@@ -155,16 +211,17 @@ if (run_mode == 'fast'){
     process fasttree {
         // establish output directory and location for FastTree environment file
         publishDir = output_dir
-        // conda "$workflow.projectDir/envs/fasttree.yaml"
+        conda "-c bioconda fasttree"
+        cache 'lenient'
 
         // Set slurm options. Eventually, I'll parameterize. Hard-coding for now.
         memory mem
-        time "2h"
+        time "8h"
         queue "batch"
         clusterOptions "--ntasks $threads"
 
         input:
-        file fasta from alignedFasta
+        file fasta from alignedFasta.flatten()
 
         output:
         file("${fasta.name}.nwk") into phylogeny_ch
@@ -172,7 +229,7 @@ if (run_mode == 'fast'){
         
         script:
         """
-        FastTree -gtr -nt $fasta > ${fasta.name}.nwk
+        fasttree -gtr -nt $fasta > ${fasta.name}.nwk
         """
     }
 } else if (run_mode == 'iqtree') {
@@ -181,24 +238,26 @@ if (run_mode == 'fast'){
         publishDir = output_dir
         conda "-c bioconda iqtree"
         stageInMode 'copy'
+        cache 'lenient'
 
         memory mem
         time "96h" 
         queue "batch"
-        clusterOptions "--ntasks $threads"
+        clusterOptions "--cpus-per-task $threads --ntasks 1"
+        maxForks 36
 
         input:
-        file fasta from alignedFasta
+        file fasta from alignedFasta.flatten()
         file "${fasta.simpleName}.dt.tsv" from dates_tsv.flatten()
 
         output:
-        file("${fasta.simpleName}.aligned.fasta.iqt.timetree.nex") into phylogeny_ch
-        file("${fasta.simpleName}.aligned.fasta.iqt.timetree.nex") into phylogeny_ch2
+        file("${fasta.simpleName}.fasta.iqt.timetree.nex") into phylogeny_ch
+        file("${fasta.simpleName}.fasta.iqt.timetree.nex") into phylogeny_ch2
         
         script:
         """
         echo "${fasta.simpleName}.dt.tsv"
-        iqtree2 -s $fasta -m GTR -pre ${fasta.name}.iqt -T $threads --date ${fasta.simpleName}.dt.tsv -o "hCoV-19/Wuhan/WIV04/2019|EPI_ISL_402124|2019-12-30" -B 1000 
+        iqtree2 -s $fasta -m GTR -pre ${fasta.name}.iqt -T $threads --date ${fasta.simpleName}.dt.tsv -o "hCoV-19/Wuhan/WIV04/2019|EPI_ISL_402124|2019-12-30" -B 1000 -T AUTO
         """
     }
 
@@ -217,14 +276,12 @@ if (run_mode == 'fast'){
 // singularity instance start --bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind $dbDir/data:/data --bind $dbDir/logs:/logs --bind /home/gs69042/plugins:/plugins --bind $dbDir/run:/var/lib/neo4j/run --bind $dbDir/import:/import    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes --env NEO4J_AUTH=neo4j/test docker://neo4j:latest test_neo
 // singularity shell instance://test_neo
 // neo4j start
-// cypher-shell -u neo4j -p test "MATCH (s:sample)-[r:calculated_distance]->(t) RETURN s,t,r LIMIT 24;"
+// cypher-shell -u neo4j -p $dbPassword "MATCH (s:sample)-[r:calculated_distance]->(t) RETURN s,t,r LIMIT 24;"
 
-// cypher-shell -u neo4j -p test "CREATE INDEX source_relationship3 FOR ()-[r:calculated_distance]->() ON (r.source_id);" 
-// cypher-shell -u neo4j -p test "CREATE INDEX source_relationship FOR ()-[r:child_of]->() ON (r.source_id);"
-requireStart = false
-dbDir = '/home/gs69042/GISAID_db'
+// cypher-shell -u neo4j -p $dbPassword "CREATE INDEX source_relationship3 FOR ()-[r:calculated_distance]->() ON (r.source_id);" 
+// cypher-shell -u neo4j -p $dbPassword "CREATE INDEX source_relationship FOR ()-[r:child_of]->() ON (r.source_id);"
+containerSettings = "--bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind $dbDir/data:/data --bind $dbDir/logs:/logs --bind /home/gs69042/plugins:/plugins --bind $dbDir/run:/var/lib/neo4j/run --bind $dbDir/import:/import    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes --env NEO4J_AUTH=neo4j/$dbPassword"
 dbPath = file(dbDir)
-containerSettings = "--bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind $dbDir/data:/data --bind $dbDir/logs:/logs --bind /home/gs69042/plugins:/plugins --bind $dbDir/run:/var/lib/neo4j/run --bind $dbDir/import:/import    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes --env NEO4J_AUTH=neo4j/test"
 
 // If we don't see folders in the target directory, go ahead and make them. 
 //   Current state is naive, checking for quantity rather than specific paths. I will come back and correct @ a later date.
@@ -245,10 +302,10 @@ if (dbPath.list().size() == 0) {
 
         shell:
         """
-        mkdir $dbDir/logs
-        mkdir $dbDir/run
-        mkdir $dbDir/import
-        mkdir $dbDir/data
+        mkdir ${dbDir}logs
+        mkdir ${dbDir}run
+        mkdir ${dbDir}import
+        mkdir ${dbDir}data
         """
     }
 
@@ -276,23 +333,25 @@ if (dbPath.list().size() == 0) {
         //   1. set initial password
         //   2. Spin up database and generate indices where needed downstream
         
-        // cypher-shell -u neo4j -p test "CREATE INDEX source_relationship FOR ()-[r:child_of]->() ON (r.source_id);"
-        // cypher-shell -u neo4j -p test "CREATE INDEX source_relationship3 FOR ()-[r:calculated_distance]->() ON (r.source_id);"
+        // cypher-shell -u neo4j -p $dbPassword "CREATE INDEX source_relationship FOR ()-[r:child_of]->() ON (r.source_id);"
+        // cypher-shell -u neo4j -p $dbPassword "CREATE INDEX source_relationship3 FOR ()-[r:calculated_distance]->() ON (r.source_id);"
         script:
         """
-        neo4j-admin set-initial-password test
+        neo4j-admin set-initial-password $dbPassword
         neo4j start
         
-        until cypher-shell -u neo4j -p test "CREATE INDEX sample_name FOR (n:sample) ON (n.name);" 
+        until cypher-shell -u neo4j -p $dbPassword "CREATE INDEX sample_name FOR (n:sample) ON (n.name);" 
         do
             echo "Create index failed, sleeping until DB running"
             sleep 6
         done
         
-        cypher-shell -u neo4j -p test "CREATE INDEX phylogeny_id FOR (n:sample) ON (n.id);" 
-        cypher-shell -u neo4j -p test "CREATE INDEX phylogeny_source FOR (n:LICA) ON (n.id);" 
-        cypher-shell -u neo4j -p test "CREATE INDEX source_relationship FOR ()-[r:child_of]->() ON (r.source_id);"
-        cypher-shell -u neo4j -p test "CREATE INDEX source_relationship3 FOR ()-[r:calculated_distance]->() ON (r.source_id);"
+        cypher-shell -u neo4j -p $dbPassword "CREATE INDEX phylogeny_id FOR (n:sample) ON (n.id);" 
+        cypher-shell -u neo4j -p $dbPassword "CREATE INDEX phylogeny_source FOR (n:LICA) ON (n.id);" 
+        cypher-shell -u neo4j -p $dbPassword "CREATE INDEX source_relationship FOR ()-[r:child_of]->() ON (r.source_id);"
+        cypher-shell -u neo4j -p $dbPassword "CREATE INDEX source_relationship3 FOR ()-[r:calculated_distance]->() ON (r.source_id);"
+        cypher-shell -u neo4j -p $dbPassword "CREATE INDEX source_relationship2 FOR ()-[r:calculated_distance]->() ON (r.source);"
+        cypher-shell -u neo4j -p $dbPassword "CREATE INDEX source_relationship4 FOR ()-[r:joint_MST]->() ON (r.source);"
  
         
         echo "Mission Success"
@@ -305,12 +364,13 @@ if (dbPath.list().size() == 0) {
 
 // Check for user options. Patristic Only will use R. 
 process tree_to_csv {
-    //conda "$workflow.projectDir/envs/python.yaml"
+    conda "-c bioconda python biopython=1.67 phylopandas pandas numpy"
     // change publish directory to the import folder of our database instance.
-    publishDir(path: dbDir + '/import', 
+    publishDir(path: "${dbDir}import", 
         mode: 'copy', 
         overwrite: true)
-    stageInMode 'copy'
+    
+
     cpus threads 
     memory mem
     time "1h"
@@ -338,15 +398,16 @@ process tree_to_csv {
 
 if (params.patristic_mode == 'R'){
     process patristic_R {
-        //conda "$workflow.projectDir/envs/python.yaml"
+        conda " -c conda-forge r r-ape r-reshape2"
         // change publish directory to the import folder of our database instance.
-        publishDir(path: dbDir + '/import', 
-            mode: 'copy', 
-            overwrite: true)
-        stageInMode 'copy'
+        // change publish directory to the import folder of our database instance.
+        publishDir(path: "${dbDir}import",
+        mode: 'copy',
+        overwrite: true)
+
         cpus threads 
         memory mem
-        time "1h"
+        time "6h"
         queue "batch"
         clusterOptions "--ntasks $threads"
         // maxForks 1
@@ -410,23 +471,23 @@ if (params.patristic_mode == 'R'){
         """
         neo4j start
         
-        until cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN MAX(r.source_id);" 
+        until cypher-shell -u neo4j -p $dbPassword "MATCH (n)-[r:child_of]->(m) RETURN MAX(r.source_id);" 
         do
             echo "create node failed, sleeping"
             sleep 6
         done
         
-        last=\$(cypher-shell -u neo4j -p test "MATCH (n)-[r:calculated_distance]->(m) RETURN CASE WHEN MAX(r.source_id) IS NULL THEN 0 ELSE MAX(r.source_id) END;" | tail -n 1)
+        last=\$(cypher-shell -u neo4j -p $dbPassword "MATCH (n)-[r:calculated_distance]->(m) RETURN CASE WHEN MAX(r.source_id) IS NULL THEN 0 ELSE MAX(r.source_id) END;" | tail -n 1)
 
-        if cypher-shell -u neo4j -p test "MATCH (n)-[r:calculated_distance]->(m) RETURN DISTINCT r.source" | grep -q ${csv.simpleName}; 
+        if cypher-shell -u neo4j -p $dbPassword "MATCH (n)-[r:calculated_distance]->(m) RETURN DISTINCT r.source" | grep -q ${csv.simpleName}.patristic.csv; 
         then
-            echo "${csv.simpleName}" "already loaded."; 
+            echo "${csv.name}" "already loaded."; 
         else 
             echo "Loading new file" "${csv.simpleName}"; 
 
-            cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate( 'LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line WITH line WHERE line.type <> \\'root\\' AND line.type <> \\'node\\' RETURN DISTINCT line.id AS id, line.type AS type', 'MERGE (child:sample:phylogeny {id: id, type: type})', {batchSize: 1000} );"
+            cypher-shell -u neo4j -p $dbPassword "CALL apoc.periodic.iterate( 'LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line WITH line WHERE line.type <> \\'root\\' AND line.type <> \\'node\\' RETURN DISTINCT line.id AS id, line.type AS type', 'MERGE (child:sample:phylogeny {id: id, type: type})', {batchSize: 1000} );"
             
-            cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate(' LOAD CSV WITH HEADERS FROM \\'file:///${csv.simpleName}.patristic.csv\\' AS line  MATCH (child:sample:phylogeny {id: line.source})  MATCH (parent:sample {id: line.target}) WHERE id(child) < id(parent)  RETURN child, parent, line', 'CREATE (child)-[:calculated_distance {source: \\'${csv.simpleName}.patristic.csv\\', distance: toFloat(line.distance),  source_id: toInteger(\$((last+1)))}]->(parent)', {batchSize: 1000});"
+            cypher-shell -u neo4j -p $dbPassword "CALL apoc.periodic.iterate(' LOAD CSV WITH HEADERS FROM \\'file:///${csv.simpleName}.patristic.csv\\' AS line  MATCH (child:sample:phylogeny {id: line.source})  MATCH (parent:sample {id: line.target}) WHERE id(child) < id(parent)  RETURN child, parent, line', 'CREATE (child)-[:calculated_distance {source: \\'${csv.simpleName}.patristic.csv\\', distance: toFloat(line.distance),  source_id: toInteger(\$((last+1)))}]->(parent)', {batchSize: 1000});"
             
         fi
         source_id=\$((last+1))
@@ -463,27 +524,27 @@ if (params.patristic_mode == 'R'){
         """
         neo4j start
         
-        until cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN MAX(r.source_id);" 
+        until cypher-shell -u neo4j -p $dbPassword "MATCH (n)-[r:child_of]->(m) RETURN MAX(r.source_id);" 
         do
             echo "create node failed, sleeping"
             sleep 6
         done
         
-        last=\$(cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN CASE WHEN MAX(r.source_id) IS NULL THEN 0 ELSE MAX(r.source_id) END;" | tail -n 1)
+        last=\$(cypher-shell -u neo4j -p $dbPassword "MATCH (n)-[r:child_of]->(m) RETURN CASE WHEN MAX(r.source_id) IS NULL THEN 0 ELSE MAX(r.source_id) END;" | tail -n 1)
 
-        if cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN DISTINCT r.source" | grep -q ${csv.simpleName}; 
+        if cypher-shell -u neo4j -p $dbPassword "MATCH (n)-[r:child_of]->(m) RETURN DISTINCT r.source" | grep -q ${csv.simpleName}; 
         then
             echo "${csv.simpleName}" "already loaded."; 
         else 
             echo "Loading new file" "${csv.simpleName}"; 
 
-            cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate('LOAD CSV WITH HEADERS FROM \\'file:///${csv.simpleName}\\' AS line WITH line WHERE line.type = \\'root\\' OR line.type = \\'node\\' RETURN DISTINCT line.id AS id, line.type AS type, line.longid AS longid, line.source AS source', 'MERGE (child:LICA:phylogeny {id: id, long_id: longid, type: type})',     {batchSize: 1000} );"
+            cypher-shell -u neo4j -p $dbPassword "CALL apoc.periodic.iterate('LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line WITH line WHERE line.type = \\'root\\' OR line.type = \\'node\\' RETURN DISTINCT line.id AS id, line.type AS type, line.longid AS longid, line.source AS source', 'MERGE (child:LICA:phylogeny {id: id, long_id: longid, type: type})',     {batchSize: 1000} );"
 
-            cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate( 'LOAD CSV WITH HEADERS FROM \\'file:///${csv.simpleName}\\' AS line WITH line WHERE line.type <> \\'root\\' AND line.type <> \\'node\\' RETURN DISTINCT line.id AS id, line.type AS type', 'MERGE (child:sample:phylogeny {id: id, type: type})', {batchSize: 1000} );"
+            cypher-shell -u neo4j -p $dbPassword "CALL apoc.periodic.iterate( 'LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line WITH line WHERE line.type <> \\'root\\' AND line.type <> \\'node\\' RETURN DISTINCT line.id AS id, line.type AS type', 'MERGE (child:sample:phylogeny {id: id, type: type})', {batchSize: 1000} );"
 
-            cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate(' LOAD CSV WITH HEADERS FROM \\'file:///${csv.simpleName}\\' AS line  WITH line WHERE line.type = \\'leaf\\'  MATCH (child:sample:phylogeny {id: line.id})  MATCH (parent:LICA:phylogeny {id: line.parent})  RETURN child, parent, line', 'CREATE (child)-[:child_of {source: \\'${csv.simpleName}\\', distance: toFloat(line.length),  source_id: toInteger(\$((last+1)))}]->(parent)', {batchSize: 1000});"
+            cypher-shell -u neo4j -p $dbPassword "CALL apoc.periodic.iterate(' LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line  WITH line WHERE line.type = \\'leaf\\'  MATCH (child:sample:phylogeny {id: line.id})  MATCH (parent:LICA:phylogeny {id: line.parent})  RETURN child, parent, line', 'CREATE (child)-[:child_of {source: \\'${csv.simpleName}\\', distance: toFloat(line.length),  source_id: toInteger(\$((last+1)))}]->(parent)', {batchSize: 1000});"
 
-            cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate('LOAD CSV WITH HEADERS FROM \\'file:///${csv.simpleName}\\' AS line  WITH line  WHERE line.type <> \\'leaf\\' AND line.type <> \\'root\\'  MATCH (child:LICA:phylogeny {id: line.id})  MATCH (parent:LICA:phylogeny {id: line.parent})  RETURN child, parent, line ', 'CREATE (child)-[:child_of {source: \\'${csv.simpleName}\\', distance: toFloat(line.length),  source_id:  toInteger(\$((last+1)))}]->(parent) ',  {batchSize: 1000}); "
+            cypher-shell -u neo4j -p $dbPassword "CALL apoc.periodic.iterate('LOAD CSV WITH HEADERS FROM \\'file:///${csv.name}\\' AS line  WITH line  WHERE line.type <> \\'leaf\\' AND line.type <> \\'root\\'  MATCH (child:LICA:phylogeny {id: line.id})  MATCH (parent:LICA:phylogeny {id: line.parent})  RETURN child, parent, line ', 'CREATE (child)-[:child_of {source: \\'${csv.simpleName}\\', distance: toFloat(line.length),  source_id:  toInteger(\$((last+1)))}]->(parent) ',  {batchSize: 1000}); "
             
         fi
         source_id=\$((last+1))
@@ -515,28 +576,28 @@ if (params.patristic_mode == 'R'){
         """
         neo4j start
         
-        until cypher-shell -u neo4j -p test "MATCH (n)-[r:child_of]->(m) RETURN DISTINCT r.source_id" 
+        until cypher-shell -u neo4j -p $dbPassword "MATCH (n)-[r:child_of]->(m) RETURN DISTINCT r.source_id" 
         do
             echo "create node failed, sleeping"
             sleep 6
         done
         
-        if cypher-shell -u neo4j -p test "MATCH (n)-[r:calculated_distance]->(m) RETURN DISTINCT r.source_id" | grep -q ${source_id}; 
+        if cypher-shell -u neo4j -p $dbPassword "MATCH (n)-[r:calculated_distance]->(m) RETURN DISTINCT r.source_id" | grep -q ${source_id}; 
         then
             echo "${source_id}" "already loaded."; 
         else 
             echo "Loading new patristic distances" "${source_id}"; 
 
-            cypher-shell -u neo4j -p test "CALL gds.graph.drop('trees', false);"
-            cypher-shell -u neo4j -p test "CALL gds.graph.drop('one_tree', false);"
+            cypher-shell -u neo4j -p $dbPassword "CALL gds.graph.drop('trees', false);"
+            cypher-shell -u neo4j -p $dbPassword "CALL gds.graph.drop('one_tree', false);"
 
             echo "CALL gds.graph.project('trees', 'phylogeny', {child_of: {properties: ['source_id', 'distance'], orientation: 'UNDIRECTED'}}) YIELD graphName AS gn, nodeCount AS nc, relationshipCount AS rc WITH gn, nc, rc CALL gds.beta.graph.project.subgraph('one_tree', 'trees', '*', 'r.source_id > ${source_id.toInteger()-1}.0 AND r.source_id < ${source_id.toInteger()+1}.0') yield graphName AS subgraph_name, nodeCount AS subgraph_nc, relationshipCount AS subgraph_rc RETURN gn, nc, rc, subgraph_name, subgraph_nc, subgraph_rc; "
 
-            cypher-shell -u neo4j -p test "CALL gds.graph.project('trees', 'phylogeny', {child_of: {properties: ['source_id', 'distance'], orientation: 'UNDIRECTED'}}) YIELD graphName AS gn, nodeCount AS nc, relationshipCount AS rc WITH gn, nc, rc CALL gds.beta.graph.project.subgraph('one_tree', 'trees', '*', 'r.source_id > ${source_id.toInteger()-1}.0 AND r.source_id < ${source_id.toInteger()+1}.0') yield graphName AS subgraph_name, nodeCount AS subgraph_nc, relationshipCount AS subgraph_rc RETURN gn, nc, rc, subgraph_name, subgraph_nc, subgraph_rc; "
+            cypher-shell -u neo4j -p $dbPassword "CALL gds.graph.project('trees', 'phylogeny', {child_of: {properties: ['source_id', 'distance'], orientation: 'UNDIRECTED'}}) YIELD graphName AS gn, nodeCount AS nc, relationshipCount AS rc WITH gn, nc, rc CALL gds.beta.graph.project.subgraph('one_tree', 'trees', '*', 'r.source_id > ${source_id.toInteger()-1}.0 AND r.source_id < ${source_id.toInteger()+1}.0') yield graphName AS subgraph_name, nodeCount AS subgraph_nc, relationshipCount AS subgraph_rc RETURN gn, nc, rc, subgraph_name, subgraph_nc, subgraph_rc; "
 
             echo "CALL apoc.periodic.iterate('MATCH (source:sample), (target:sample) WITH source, target WHERE id(source) < id(target) AND (source)-[:child_of {source_id: $source_id}]->() AND (target)-[:child_of {source_id: $source_id}]->() RETURN source, target', ' CALL gds.shortestPath.dijkstra.stream(\\'one_tree\\', {  relationshipWeightProperty: \\'distance\\', sourceNode: id(source), targetNode: id(target) }) YIELD sourceNode, targetNode, totalCost AS distance WHERE gds.util.isFinite(distance) = true AND distance <= $patThreshold WITH source, target, distance CREATE (source)-[:calculated_distance {distance: distance,  source_id: $source_id}]->(target)', {batchSize: 1000});"
             
-            cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate('MATCH (source:sample), (target:sample) WITH source, target WHERE id(source) < id(target) AND (source)-[:child_of {source_id: $source_id}]->() AND (target)-[:child_of {source_id: $source_id}]->() RETURN source, target', ' CALL gds.shortestPath.dijkstra.stream(\\'one_tree\\', {  relationshipWeightProperty: \\'distance\\', sourceNode: id(source), targetNode: id(target) }) YIELD sourceNode, targetNode, totalCost AS distance WHERE gds.util.isFinite(distance) = true AND distance <= $patThreshold WITH source, target, distance CREATE (source)-[:calculated_distance {distance: distance,  source_id: $source_id}]->(target)', {batchSize: 1000});"
+            cypher-shell -u neo4j -p $dbPassword "CALL apoc.periodic.iterate('MATCH (source:sample), (target:sample) WITH source, target WHERE id(source) < id(target) AND (source)-[:child_of {source_id: $source_id}]->() AND (target)-[:child_of {source_id: $source_id}]->() RETURN source, target', ' CALL gds.shortestPath.dijkstra.stream(\\'one_tree\\', {  relationshipWeightProperty: \\'distance\\', sourceNode: id(source), targetNode: id(target) }) YIELD sourceNode, targetNode, totalCost AS distance WHERE gds.util.isFinite(distance) = true AND distance <= $patThreshold WITH source, target, distance CREATE (source)-[:calculated_distance {distance: distance,  source_id: $source_id}]->(target)', {batchSize: 1000});"
             
         fi
         
@@ -570,30 +631,29 @@ if ((params.mst != null) && (params.mst)) {
         """
         neo4j start
         
-        until cypher-shell -u neo4j -p test "MATCH (n)-[r]->(m) RETURN MAX(r.source_id);"
+        until cypher-shell -u neo4j -p $dbPassword "MATCH (n)-[r]->(m) RETURN MAX(r.source_id);"
         do
             echo "create node failed, sleeping"
             sleep 6
         done
         
-        if cypher-shell -u neo4j -p test "MATCH (n)-[r:joint_MST]->(m) RETURN DISTINCT r.source_id" | grep -q ${source_id}; 
+        if cypher-shell -u neo4j -p $dbPassword "MATCH (n)-[r:joint_MST]->(m) RETURN DISTINCT r.source_id" | grep -q ${source_id}; 
         then
             echo "${source_id}" "already loaded."; 
         else 
-            echo "Loading new patristic distances" "${source_id}"; 
+            echo "Loading new Minimum Spanning Trees" "${source_id}"; 
+            cypher-shell -u neo4j -p $dbPassword "CALL gds.graph.drop('distance_graph', false);"
+            cypher-shell -u neo4j -p $dbPassword "CALL gds.graph.drop('subgraph', false);"
 
-            cypher-shell -u neo4j -p test "CALL gds.graph.drop('distance_graph', false);"
-            cypher-shell -u neo4j -p test "CALL gds.graph.drop('subgraph', false);"
+            cypher-shell -u neo4j -p $dbPassword "CALL gds.graph.project('distance_graph', 'sample', {calculated_distance: {orientation: 'UNDIRECTED', properties: ['source_id', 'distance']}} ) YIELD graphName AS gn, nodeCount AS nc, relationshipCount AS rc RETURN gn, nc, rc;"
 
-            cypher-shell -u neo4j -p test "CALL gds.graph.project('distance_graph', 'sample', {calculated_distance: {orientation: 'UNDIRECTED', properties: ['source_id', 'distance']}} ) YIELD graphName AS gn, nodeCount AS nc, relationshipCount AS rc RETURN gn, nc, rc;"
+            cypher-shell -u neo4j -p $dbPassword "CALL gds.beta.graph.project.subgraph('subgraph', 'distance_graph', '*', 'r.source_id > ${source_id.toInteger()-1}.0 AND r.source_id < ${source_id.toInteger()+1}.0'  ) YIELD graphName AS gn, nodeCount AS nc, relationshipCount AS rc RETURN gn, nc, rc;" 
 
-            cypher-shell -u neo4j -p test "CALL gds.beta.graph.project.subgraph('subgraph', 'distance_graph', '*', 'r.source_id > ${source_id.toInteger()-1}.0 AND r.source_id < ${source_id.toInteger()+1}.0'  ) YIELD graphName AS gn, nodeCount AS nc, relationshipCount AS rc RETURN gn, nc, rc;" 
-
-            cypher-shell -u neo4j -p test "MATCH (n:sample)-[:calculated_distance {source_id: $source_id}]->()  WITH DISTINCT id(n) AS iteration_number LIMIT $MST_number CALL gds.alpha.spanningTree.minimum.write('subgraph', {startNodeId: iteration_number,    relationshipWeightProperty: 'distance', writeProperty: 'MST_' + iteration_number + '_' + '$source_id', weightWriteProperty: 'distance_combined'}) YIELD computeMillis, writeMillis RETURN computeMillis AS coM, writeMillis AS wM;"
+            cypher-shell -u neo4j -p $dbPassword "MATCH (n:sample)-[:calculated_distance {source_id: $source_id}]->()  WITH DISTINCT id(n) AS iteration_number LIMIT $MST_number CALL gds.alpha.spanningTree.minimum.write('subgraph', {startNodeId: iteration_number,    relationshipWeightProperty: 'distance', writeProperty: 'MST_individual', weightWriteProperty: 'distance_combined'}) YIELD computeMillis, writeMillis RETURN SUM(computeMillis) AS coM, sum(writeMillis) AS wM;"
             
-            cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate(    'MATCH (n:sample)-[r]-(:sample) WHERE type(r) ENDS WITH \\'$source_id\\' WITH n, COUNT(DISTINCT type(r)) AS max_width  MATCH (n)-[r]->(n2:sample) WHERE type(r) ENDS WITH \\'$source_id\\'  AND id(n) < id(n2)  RETURN max_width, n, n2, COUNT(DISTINCT r) AS edge_width, AVG(r.distance_combined) AS mean_dist', 'CREATE (n)-[:joint_MST {source: \\'$source_id\\', edge_width: edge_width / toFloat(max_width), mean_dist: mean_dist}]->(n2)', {batchSize: 10000}) YIELD batches AS batches, timeTaken AS timeTaken, failedBatches AS failedBatches RETURN batches, timeTaken, failedBatches;"
+            cypher-shell -u neo4j -p $dbPassword "CALL apoc.periodic.iterate(    'MATCH (np:sample)-[r:MST_individual]-(:sample) WITH CASE WHEN COUNT(DISTINCT np) < $MST_number THEN COUNT(DISTINCT np) ELSE $MST_number END AS max_width MATCH (n:sample) WITH n, max_width MATCH (n2:sample) WHERE id(n) < id(n2) WITH n, n2, max_width MATCH (n)-[r:MST_individual]-(n2) WHERE id(n) < id(n2)  RETURN max_width, n, n2, COUNT(DISTINCT r) AS edge_width, AVG(r.distance_combined) AS mean_dist', 'CREATE (n)-[:joint_MST {source: \\'$source_id\\', edge_width: edge_width / toFloat(max_width), mean_dist: mean_dist}]->(n2)', {batchSize: 1000, parallel:true}) YIELD batches AS batches, timeTaken AS timeTaken, failedBatches AS failedBatches RETURN batches, timeTaken, failedBatches;"
 
-            cypher-shell -u neo4j -p test "CALL apoc.periodic.iterate('MATCH (:sample)-[r]->(:sample) WHERE type(r) ENDS WITH \\'$source_id\\' RETURN r', 'DELETE r', {batchSize: 10000}) YIELD batches AS batches, timeTaken AS timeTaken, failedBatches AS failedBatches RETURN batches, timeTaken, failedBatches;"
+            cypher-shell -u neo4j -p $dbPassword "CALL apoc.periodic.iterate('MATCH (:sample)-[r:MST_individual]->(:sample) RETURN r', 'DELETE r', {batchSize: 1000}) YIELD batches AS batches, timeTaken AS timeTaken, failedBatches AS failedBatches RETURN batches, timeTaken, failedBatches;"
 
         fi
         
