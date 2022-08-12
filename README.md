@@ -10,7 +10,7 @@ A graph database which enables storage of phylogenies as Tree Aligned Graphs (TA
 
 `analysis`: Includes a subfolder for cytoscape styles used, a quick python script to generate lat/long coordinates for each zipcode, and a series of cypher statements used to generate a patristic distance network; build a forest of minimum spanning trees; and summarize the forest of minimum spanning trees.
 
-`nextflow`: Contains a frame for generating a nextflow workflow to populate and maintain the database.
+`nextflow`: Contains a nextflow workflow to populate and maintain the database. Currently, it is manually configured for a slurm HPC environment. 
 
 ## Future Work
 
