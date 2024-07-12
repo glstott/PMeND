@@ -273,7 +273,7 @@ if (run_mode == 'fast'){
 //   pipeline. It would be nice to have a NF pipeline that builds the Neo4j server for the user only if it's the first time
 //   or if they don't have their own DB connection info to pass along. I'll start with the assumption of a new user each time.
 // dbDir='/home/gs69042/GISAID_db'
-// singularity instance start --bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind $dbDir/data:/data --bind $dbDir/logs:/logs --bind /home/gs69042/plugins:/plugins --bind $dbDir/run:/var/lib/neo4j/run --bind $dbDir/import:/import    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes --env NEO4J_AUTH=neo4j/test docker://neo4j:latest test_neo
+// singularity instance start --bind /home/gs69042/conf_neo:/var/lib/neo4j/conf --bind $dbDir/data:/data --bind $dbDir/logs:/logs --bind /home/gs69042/plugins:/plugins --bind $dbDir/run:/var/lib/neo4j/run --bind $dbDir/import:/import    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes --env NEO4J_AUTH=neo4j/test docker://neo4j:4.4.12-community test_neo
 // singularity shell instance://test_neo
 // neo4j start
 // cypher-shell -u neo4j -p $dbPassword "MATCH (s:sample)-[r:calculated_distance]->(t) RETURN s,t,r LIMIT 24;"
@@ -311,7 +311,7 @@ if (dbPath.list().size() == 0) {
 
     process new_db {
         // Spawn docker image, accepting license agreement and binding relevant paths. 
-        container "docker://neo4j:latest"
+        container "docker://neo4j:4.4.12-community"
         containerOptions containerSettings
 
         // Specify parameters for our HPC environment. We should move these to a conf file in the future to clean things up. 
@@ -446,7 +446,7 @@ if (params.patristic_mode == 'R'){
 
     process load_data_withPat {
         // Open up the database with docker image
-        container "docker://neo4j:latest"
+        container "docker://neo4j:4.4.12-community"
         containerOptions containerSettings
         
         // HPC environment settings. 
@@ -500,7 +500,7 @@ if (params.patristic_mode == 'R'){
 } else {
     process load_data {
         // Open up the database with docker image
-        container "docker://neo4j:latest"
+        container "docker://neo4j:4.4.12-community"
         containerOptions containerSettings
         
         // HPC environment settings. 
@@ -555,7 +555,7 @@ if (params.patristic_mode == 'R'){
     
     process patristic_calculation {
         // Spawn docker image, accepting license agreement and binding relevant paths. 
-        container "docker://neo4j:latest"
+        container "docker://neo4j:4.4.12-community"
         containerOptions containerSettings
 
         // Specify parameters for our HPC environment. We should move these to a conf file in the future to clean things up. 
@@ -613,7 +613,7 @@ MST_number=2000
 if ((params.mst != null) && (params.mst)) {
     process generateMST {
         // Spawn docker image, accepting license agreement and binding relevant paths. 
-        container "docker://neo4j:latest"
+        container "docker://neo4j:4.4.12-community"
         containerOptions containerSettings
 
         // Specify parameters for our HPC environment. We should move these to a conf file in the future to clean things up. 
